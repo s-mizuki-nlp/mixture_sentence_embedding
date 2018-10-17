@@ -17,7 +17,6 @@ class GMMSampler(nn.Module):
 
         self._n_sample = n_sample
         self._tau = param_tau
-        self._
 
     @property
     def tau(self) -> float:
