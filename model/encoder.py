@@ -109,6 +109,11 @@ class GMMLSTMEncoder(LSTMEncoder):
         # sigma[b,t] = exp(MLP(h[b,t]))
         z_sigma = self._enc_sigma(h)
         z_sigma = z_sigma.squeeze(dim=-1)
-        sigma = torch.exp(z_sigma) * mask.float()
+        if z_sigma.ndimension() == 2:
+            sigma = torch.exp(z_sigma) * mask.float()
+        elif z_sigma.ndimension() == 3:
+            sigma = torch.exp(z_sigma) * mask.float().unsqueeze(dim=-1)
+        else:
+            raise AttributeError("unsupported dimension size: %d" % z_sigma.ndimension())
 
         return alpha, mu, sigma
