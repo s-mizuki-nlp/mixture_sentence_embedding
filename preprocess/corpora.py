@@ -22,7 +22,10 @@ class Dictionary(object):
         self._token2id = {}
         self._id2token = {}
         self._masking = masking
-        self._offset = len(special_tokens) + masking
+        if special_tokens is not None:
+            self._offset = len(special_tokens) + masking
+        else:
+            self._offset = int(masking)
         self._count_freq = count_freq
         self._oov = oov
         self._special_tokens = deepcopy(special_tokens) if special_tokens is not None else []
@@ -106,7 +109,7 @@ class Dictionary(object):
     def fit(self, tokenized_corpus, initialize=True):
         if initialize:
             self._init()
-        idx = max(self._id2token.keys())
+        idx = max(self._id2token.keys()) if len(self._id2token) > 0 else self._offset
         for lst_token in tokenized_corpus:
             for token in lst_token:
                 if token not in self._token2id:
