@@ -53,6 +53,8 @@ class GMMSampler(nn.Module):
         v = np.random.normal(size=(size, n_dim)).astype(np.float32)
         t = torch.tensor(data=v, dtype=torch.float, requires_grad=False)
 
+        return t
+
     def _reparametrization_trick(self, vec_alpha: torch.Tensor, mat_mu: torch.Tensor, mat_std: torch.Tensor):
         n_len, n_dim = mat_mu.size()
 
@@ -80,7 +82,6 @@ class GMMSampler(nn.Module):
         lst_mat_z = []
         # vec_ln_alpha = (n_len,), mat_mu = (n_len, n_dim), mat_std = (n_len, n_dim)
         for vec_ln_alpha, mat_mu, mat_std in zip(lst_vec_ln_alpha, lst_mat_mu, lst_mat_std):
-            n_len = len(vec_ln_alpha)
             # apply gumbel-softmax on vec_ln_alpha
             # mat_alpha = (n_sample, n_len)
             mat_alpha = gumbel_softmax(logits=vec_ln_alpha.repeat((self._n_sample,1)), tau=self._tau)
