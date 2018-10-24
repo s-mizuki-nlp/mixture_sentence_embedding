@@ -10,7 +10,8 @@ class LSTMEncoder(nn.Module):
     __pad_index = 0
     __batch_first = True
 
-    def __init__(self, n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway=False, **kwargs):
+    def __init__(self, n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway=False,
+                 return_state=False, **kwargs):
 
         super(__class__, self).__init__()
 
@@ -20,6 +21,7 @@ class LSTMEncoder(nn.Module):
         self._n_lstm_layer = n_lstm_layer
         self._bidirectional = bidirectional
         self._highway = highway
+        self._return_state = return_state
 
         self._embed = nn.Embedding(num_embeddings=n_vocab, embedding_dim=n_dim_embedding, padding_idx=self.__pad_index)
         self._lstm = nn.LSTM(input_size=n_dim_embedding, hidden_size=n_dim_lstm_hidden, num_layers=n_lstm_layer,
@@ -37,6 +39,8 @@ class LSTMEncoder(nn.Module):
 
         :param x_seq: batch of sequence of index; torch.tensor((n_mb, n_seq_len_max), dtype=torch.long)
         :param seq_len: batch of sequence length; torch.tensor((n_mb,), dtype=torch.long)
+
+        return: (encoded sequence, sequence length, optional[final state(h_n,c_n)])
         """
         batch_size, n_seq_len_max = x_seq.size()
 
@@ -46,15 +50,18 @@ class LSTMEncoder(nn.Module):
         v = nn.utils.rnn.pack_padded_sequence(embed, lengths=seq_len, batch_first=self.__batch_first)
 
         h_0_c_0 = self._init_state(batch_size=batch_size)
-        h, _ = self._lstm(v, h_0_c_0)
+        h, h_n_c_n = self._lstm(v, h_0_c_0)
 
         # undo the packing operation
-        h, _ = nn.utils.rnn.pad_packed_sequence(h, batch_first=self.__batch_first, padding_value=0.)
+        h, v_seq_len = nn.utils.rnn.pad_packed_sequence(h, batch_first=self.__batch_first, padding_value=0.)
 
         if self._highway:
             h = torch.cat([h,embed], dim=-1)
 
-        return h, seq_len
+        if self._return_state:
+            return h, seq_len, h_n_c_n
+        else:
+            return h, seq_len
 
 
 class GMMLSTMEncoder(LSTMEncoder):
@@ -64,9 +71,9 @@ class GMMLSTMEncoder(LSTMEncoder):
 
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
                  encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer, highway: bool=False,
-                 apply_softmax: bool=True, **kwargs):
+                 apply_softmax: bool=True, return_state: bool=False, **kwargs):
 
-        super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway, **kwargs)
+        super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway, return_state, **kwargs)
         self._enc_alpha = encoder_alpha
         self._enc_mu = encoder_mu
         self._enc_sigma = encoder_sigma
@@ -88,7 +95,11 @@ class GMMLSTMEncoder(LSTMEncoder):
         mask = (x_seq > self.__pad_index)
 
         # h = (N_b, N_t, N_h), seq_len = (N_b,)
-        h, seq_len = super(__class__, self).forward(x_seq, seq_len)
+        if self._return_state:
+            h, seq_len, h_n_c_n = super(__class__, self).forward(x_seq, seq_len)
+        else:
+            h, seq_len = super(__class__, self).forward(x_seq, seq_len)
+            h_n_c_n = None
 
         # z_alpha = (N_b, N_t)
         # alpha = (N_b, N_t)
@@ -116,4 +127,7 @@ class GMMLSTMEncoder(LSTMEncoder):
         else:
             raise AttributeError("unsupported dimension size: %d" % z_sigma.ndimension())
 
-        return alpha, mu, sigma
+        if self._return_state:
+            return alpha, mu, sigma, h_n_c_n
+        else:
+            return alpha, mu, sigma
