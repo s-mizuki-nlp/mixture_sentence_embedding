@@ -1,0 +1,4 @@
+pytorch==0.4.1
+numpy
+pandas
+-e git+https://github.com/OpenNMT/OpenNMT-py.git
