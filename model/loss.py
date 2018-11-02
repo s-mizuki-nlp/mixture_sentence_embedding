@@ -14,6 +14,23 @@ sys.path.append(__ROOT_DIR)
 
 from distribution.mixture_distribution import MultiVariateGaussianMixture, UniVariateGaussianMixture
 
+class PaddedNLLLoss(_Loss):
+
+    def forward(self, y_ln_prob: torch.Tensor, y_true: torch.Tensor, y_len: List[int]):
+
+        y_ln_prob_seq = torch.cat(tuple(y_ln_prob[b,:seq_len,:] for b, seq_len in enumerate(y_len)), dim=0)
+
+        if y_true.ndimension() == 1:
+            y_true_seq = y_true
+        elif y_true.ndimension() == 2:
+            y_true_seq = torch.cat(tuple(y_true[b,:seq_len] for b, seq_len in enumerate(y_len)), dim=0)
+        else:
+            raise AttributeError("unsupported input dimension.")
+
+        loss = F.nll_loss(input=y_ln_prob_seq, target=y_true_seq)
+
+        return loss
+
 
 class MaskedKLDivLoss(_Loss):
 
