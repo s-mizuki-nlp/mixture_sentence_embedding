@@ -4,26 +4,34 @@
 import torch
 from torch import nn
 from .multi_layer import MultiDenseLayer
+from typing import Optional
 
 class LSTMEncoder(nn.Module):
 
     __pad_index = 0
     __batch_first = True
 
-    def __init__(self, n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway=False,
-                 return_state=False, **kwargs):
+    def __init__(self, n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional,
+                 embedding_layer: Optional[nn.Embedding] = None,
+                 highway=False, return_state=False, **kwargs):
 
         super(__class__, self).__init__()
 
         self._n_vocab = n_vocab
-        self._n_dim_embedding = n_dim_embedding
+        if embedding_layer is not None:
+            self._n_dim_embedding = embedding_layer.embedding_dim
+        else:
+            self._n_dim_embedding = n_dim_embedding
         self._n_dim_lstm_hidden = n_dim_lstm_hidden
         self._n_lstm_layer = n_lstm_layer
         self._bidirectional = bidirectional
         self._highway = highway
         self._return_state = return_state
 
-        self._embed = nn.Embedding(num_embeddings=n_vocab, embedding_dim=n_dim_embedding, padding_idx=self.__pad_index)
+        if embedding_layer is not None:
+            self._embed = embedding_layer
+        else:
+            self._embed = nn.Embedding(num_embeddings=n_vocab, embedding_dim=n_dim_embedding, padding_idx=self.__pad_index)
         self._lstm = nn.LSTM(input_size=n_dim_embedding, hidden_size=n_dim_lstm_hidden, num_layers=n_lstm_layer,
                              batch_first=self.__batch_first, bidirectional=bidirectional)
 
@@ -70,10 +78,12 @@ class GMMLSTMEncoder(LSTMEncoder):
     __batch_first = True
 
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
-                 encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer, highway: bool=False,
-                 apply_softmax: bool=True, return_state: bool=False, **kwargs):
+                 encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer,
+                 embedding_layer: Optional[nn.Embedding] = None,
+                 highway: bool=False, apply_softmax: bool=True, return_state: bool=False, **kwargs):
 
-        super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional, highway, return_state, **kwargs)
+        super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional,
+                                        embedding_layer, highway, return_state, **kwargs)
         self._enc_alpha = encoder_alpha
         self._enc_mu = encoder_mu
         self._enc_sigma = encoder_sigma
