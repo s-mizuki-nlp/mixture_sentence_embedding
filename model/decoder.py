@@ -60,3 +60,23 @@ class SelfAttentiveLSTMDecoder(nn.Module):
         t_dec_h = torch.stack(lst_h_t, dim=1)
 
         return t_dec_h
+
+
+class SimplePrediction(nn.Module):
+
+    def __init__(self, n_dim_in: int, n_dim_out: int, log: bool = False):
+
+        super(__class__, self).__init__()
+
+        self._linear = nn.Linear(in_features=n_dim_in, out_features=n_dim_out, bias=True)
+        if log:
+            self._activation = F.log_softmax
+        else:
+            self._activation = F.softmax
+
+    def forward(self, x_input):
+
+        x_to_y = self._linear.forward(x_input)
+        y = self._activation(x_to_y, dim=-1)
+
+        return y
