@@ -26,6 +26,14 @@ class GMMSampler(nn.Module):
     def tau(self, value: float):
         self._tau = value
 
+    @property
+    def sample_size(self):
+        return self._n_sample
+
+    @sample_size.setter
+    def sample_size(self, value: int):
+        self._n_sample = value
+
     def _sample_gumbel(self, n_dim: int, size: Optional[int] = None):
         """
         returns random number(size, n_dim) sampled from gumbel distribution
@@ -69,15 +77,17 @@ class GMMSampler(nn.Module):
 
         return vec_z
 
-    def forward(self, lst_vec_ln_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
+    def forward(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
         """
         sample `n_sample` random samples from gaussian mixture using both gumbel-softmax trick and re-parametrization trick.
 
-        :param lst_vec_ln_alpha: list of the packed scale vectors
+        :param lst_vec_alpha: list of the packed scale vectors
         :param lst_mat_mu: list of the sequence of packed mean vectors
         :param lst_mat_std: list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
         :return: random samples with shape (n_mb, n_sample, n_dim)
         """
+
+        lst_vec_ln_alpha = [torch.log(vec_alpha) for vec_alpha in lst_vec_alpha]
         # gumbel-softmax trick + re-parametrization trick
         lst_mat_z = []
         # vec_ln_alpha = (n_len,), mat_mu = (n_len, n_dim), mat_std = (n_len, n_dim)
