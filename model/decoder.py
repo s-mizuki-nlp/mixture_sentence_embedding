@@ -64,11 +64,15 @@ class SelfAttentiveLSTMDecoder(nn.Module):
 
 class SimplePrediction(nn.Module):
 
-    def __init__(self, n_dim_in: int, n_dim_out: int, log: bool = False):
+    def __init__(self, n_dim_in: int, n_dim_out: int, log: bool = False, bias: bool = True,
+                 shared_weight: Optional[nn.Parameter] = None):
 
         super(__class__, self).__init__()
 
-        self._linear = nn.Linear(in_features=n_dim_in, out_features=n_dim_out, bias=True)
+        self._linear = nn.Linear(in_features=n_dim_in, out_features=n_dim_out, bias=bias)
+        if shared_weight is not None:
+            self._linear.weight = shared_weight
+
         if log:
             self._activation = F.log_softmax
         else:
