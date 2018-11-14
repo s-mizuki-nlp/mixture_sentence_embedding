@@ -12,7 +12,7 @@ from torch.nn import functional as F
 __ROOT_DIR = os.path.join( os.path.dirname(__file__), "../")
 sys.path.append(__ROOT_DIR)
 
-from distribution.mixture_distribution import MultiVariateGaussianMixture, UniVariateGaussianMixture
+from distribution.mixture import MultiVariateGaussianMixture, UniVariateGaussianMixture
 
 class PaddedNLLLoss(_Loss):
 
