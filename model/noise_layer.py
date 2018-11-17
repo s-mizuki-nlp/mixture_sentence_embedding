@@ -11,12 +11,13 @@ import numpy as np
 
 class GMMSampler(nn.Module):
 
-    def __init__(self, n_sample: int, param_tau: float):
+    def __init__(self, n_sample: int, param_tau: float, debug=False):
 
         super().__init__()
 
         self._n_sample = n_sample
         self._tau = param_tau
+        self._debug = debug
 
     @property
     def tau(self) -> float:
@@ -90,11 +91,14 @@ class GMMSampler(nn.Module):
         lst_vec_ln_alpha = [torch.log(vec_alpha) for vec_alpha in lst_vec_alpha]
         # gumbel-softmax trick + re-parametrization trick
         lst_mat_z = []
+        lst_mat_alpha = []
         # vec_ln_alpha = (n_len,), mat_mu = (n_len, n_dim), mat_std = (n_len, n_dim)
         for vec_ln_alpha, mat_mu, mat_std in zip(lst_vec_ln_alpha, lst_mat_mu, lst_mat_std):
             # apply gumbel-softmax on vec_ln_alpha
             # mat_alpha = (n_sample, n_len)
             mat_alpha = gumbel_softmax(logits=vec_ln_alpha.repeat((self._n_sample,1)), tau=self._tau)
+            if self._debug:
+                lst_mat_alpha.append(mat_alpha)
 
             # apply re-parametrization trick
             iter_rp = [self._reparametrization_trick(vec_alpha, mat_mu, mat_std) for vec_alpha in mat_alpha]
@@ -105,4 +109,7 @@ class GMMSampler(nn.Module):
         # tensor_z = (n_mb, n_sample, n_dim)
         tensor_z = torch.stack(lst_mat_z)
 
-        return tensor_z
+        if self._debug:
+            return lst_mat_alpha, lst_mat_z
+        else:
+            return tensor_z
