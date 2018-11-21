@@ -25,6 +25,7 @@ class VariationalAutoEncoder(nn.Module):
         self._predictor = state_to_seq_decoder
 
         assert seq_to_gmm_encoder._apply_softmax, "it expects scaled \alpha output."
+        assert not seq_to_gmm_encoder._return_state, "we don't user encoder output state."
 
     @property
     def sampler_tau(self):
@@ -47,7 +48,10 @@ class VariationalAutoEncoder(nn.Module):
         """
 
         # encoder: Sequence to padded GMM parameters {\alpha, \mu, \sigma}
-        v_alpha, v_mu, v_sigma, (h_n, c_n) = self._encoder.forward(x_seq, x_seq_len)
+        if self._encoder._return_state:
+            v_alpha, v_mu, v_sigma, (h_n, c_n) = self._encoder.forward(x_seq, x_seq_len)
+        else:
+            v_alpha, v_mu, v_sigma = self._encoder.forward(x_seq, x_seq_len)
 
         # pack padded sequence while keeping torch.tensor object
         lst_seq_len = x_seq_len.data.numpy()

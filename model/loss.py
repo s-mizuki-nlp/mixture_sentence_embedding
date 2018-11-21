@@ -36,6 +36,13 @@ class MaskedKLDivLoss(_Loss):
 
     __EPS = 1E-5
 
+    def __init__(self, scale: float = 1.0, size_average=None, reduce=None, reduction='elementwise_mean'):
+
+        super(MaskedKLDivLoss, self).__init__(size_average, reduce, reduction)
+
+        self._scale = scale
+
+
     def forward(self, input_x: torch.Tensor, input_y: torch.Tensor, mask: torch.Tensor):
 
         if mask.is_floating_point():
@@ -47,6 +54,7 @@ class MaskedKLDivLoss(_Loss):
             loss = torch.mean(batch_loss)
         elif self.reduction == "sum":
             loss = torch.sum(batch_loss)
+        loss = loss * self._scale
 
         return loss
 
@@ -85,6 +93,7 @@ class EmpiricalSlicedWassersteinDistance(_Loss):
 
             loss = torch.add(loss, torch.mean(torch.pow(x_t-y_t,2)))
 
+        # it returns sample-wise mean
         loss = torch.div(loss, self._n_slice)
 
         return loss

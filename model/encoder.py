@@ -79,11 +79,11 @@ class GMMLSTMEncoder(LSTMEncoder):
 
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
                  encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer,
-                 embedding_layer: Optional[nn.Embedding] = None,
+                 custom_embedding_layer: Optional[nn.Embedding] = None,
                  highway: bool=False, apply_softmax: bool=True, return_state: bool=False, **kwargs):
 
         super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional,
-                                        embedding_layer, highway, return_state, **kwargs)
+                                        custom_embedding_layer, highway, return_state, **kwargs)
         self._enc_alpha = encoder_alpha
         self._enc_mu = encoder_mu
         self._enc_sigma = encoder_sigma

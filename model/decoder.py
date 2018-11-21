@@ -12,15 +12,15 @@ from .attention import SimpleGlobalAttention
 class SelfAttentiveLSTMDecoder(nn.Module):
 
     def __init__(self, n_dim_lstm_hidden: int, n_dim_memory: int,
-                 attention_layer: Optional[SimpleGlobalAttention] = None):
+                 custom_attention_layer: Optional[SimpleGlobalAttention] = None):
 
         super(__class__, self).__init__()
 
         self._n_dim_lstm_hidden = n_dim_lstm_hidden
         self._n_dim_memory = n_dim_memory
 
-        if attention_layer is not None:
-            self._attention_layer = attention_layer
+        if custom_attention_layer is not None:
+            self._attention_layer = custom_attention_layer
         else:
             n_dim_query = n_dim_lstm_hidden * 2
             self._attention_layer = SimpleGlobalAttention(dim_query=n_dim_query, dim_key=n_dim_memory)
@@ -62,7 +62,7 @@ class SelfAttentiveLSTMDecoder(nn.Module):
         return t_dec_h
 
 
-class SimplePrediction(nn.Module):
+class SimplePredictor(nn.Module):
 
     def __init__(self, n_dim_in: int, n_dim_out: int, log: bool = False, bias: bool = True,
                  shared_weight: Optional[nn.Parameter] = None):
