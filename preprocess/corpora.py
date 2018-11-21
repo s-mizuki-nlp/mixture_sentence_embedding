@@ -68,7 +68,10 @@ class Dictionary(object):
 
     @property
     def max_id(self) -> int:
-        return max(self._id2token.keys())
+        if len(self._id2token) > 0:
+            return max(self._id2token.keys())
+        else:
+            return self._offset
 
     @property
     def offset(self) -> int:
@@ -109,7 +112,7 @@ class Dictionary(object):
     def fit(self, tokenized_corpus, initialize=True):
         if initialize:
             self._init()
-        idx = max(self._id2token.keys()) if len(self._id2token) > 0 else self._offset
+        idx = self.max_id + 1
         for lst_token in tokenized_corpus:
             for token in lst_token:
                 if token not in self._token2id:
