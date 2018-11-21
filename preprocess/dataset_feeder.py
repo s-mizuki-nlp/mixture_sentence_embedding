@@ -5,7 +5,7 @@ import os, sys, io
 import math
 import numpy as np
 from abc import ABCMeta, abstractmethod
-from typing import Iterable, List, Dict, Tuple, Union, Any
+from typing import Iterable, List, Dict, Tuple, Union, Any, Optional
 
 from more_itertools import chunked
 
@@ -49,6 +49,51 @@ class GeneralSequenceFeeder(AbstractFeeder):
     def _init_iter_batch(self):
 
         iter_token = self._tokenizer.tokenize(self._corpus)
+        iter_token_idx = self._dictionary.iter_transform(iter_token)
+
+        return iter_token_idx
+
+
+class GeneralSentenceFeeder(GeneralSequenceFeeder):
+
+    def __init__(self, corpus: Iterable, tokenizer: AbstractTokenizer, dictionary: Dictionary, n_minibatch=1, validation_split=0.0,
+                 bos_symbol: Optional[str] = None, eos_symbol: Optional[str] = None):
+        """
+        extension of the GeneralSequenceFeeder class that is customized to sentence feed.
+        it can prepend/append special token at the beginning/end of the sentence.
+
+        :param corpus: collection of the sentence
+        :param tokenizer: tokenizer for the sentence
+        :param dictionary: token-to-index encoder
+        :param n_minibatch: minibatch size
+        :param validation_split: if enabled, the fraction of the minibatch is splitted into validation set.
+        :param bos_symbol: beginning-of-sentence symbol. e.g. `<bos>`
+        :param eos_symbol: end-of-sentence symbol. e.g. `<eos>`
+        """
+        super(__class__, self).__init__(corpus, tokenizer, dictionary, n_minibatch, validation_split)
+
+        self._bos = bos_symbol
+        self._eos = eos_symbol
+        if self._bos is not None:
+            if self._eos is not None:
+                self._mode = "both"
+            else:
+                self._mode = "bos"
+        else:
+            if self._eos is not None:
+                self._mode = "eos"
+            else:
+                self._mode = "none"
+
+    def _init_iter_batch(self):
+
+        iter_token = self._tokenizer.tokenize(self._corpus)
+        if self._mode == "bos":
+            iter_token = ([self._bos] + lst_token for lst_token in iter_token)
+        elif self._mode == "eos":
+            iter_token = (lst_token + [self._eos] for lst_token in iter_token)
+        elif self._mode == "both":
+            iter_token = ([self._bos] + lst_token + [self._eos] for lst_token in iter_token)
         iter_token_idx = self._dictionary.iter_transform(iter_token)
 
         return iter_token_idx
