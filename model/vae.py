@@ -39,7 +39,7 @@ class VariationalAutoEncoder(nn.Module):
     def sampler_size(self):
         return self._sampler.sample_size
 
-    def forward(self, x_seq: torch.Tensor, x_seq_len: torch.Tensor):
+    def forward(self, x_seq: torch.Tensor, x_seq_len: torch.Tensor, decoder_max_step: Optional[int] = None):
         """
 
         :param x_seq:
@@ -63,7 +63,10 @@ class VariationalAutoEncoder(nn.Module):
         v_z = self._sampler.forward(lst_vec_alpha=lst_alpha, lst_mat_mu=lst_mu, lst_mat_std=lst_sigma)
 
         # decode from latent representation vector set
-        n_step = max(lst_seq_len)
+        if decoder_max_step is None:
+            n_step = max(lst_seq_len) + 1
+        else:
+            n_step = decoder_max_step
         v_dec_h = self._decoder.forward(z_latent=v_z, n_step=n_step)
 
         # predict log probability of output tokens
