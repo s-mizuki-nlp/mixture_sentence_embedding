@@ -10,6 +10,7 @@ n_dim_latent = 10
 n_dim_lstm_hidden = 10
 n_dim_embedding = 10
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
+n_gmm_component = 4
 
 cfg_auto_encoder = {
     "encoder": {
@@ -52,8 +53,8 @@ cfg_auto_encoder = {
         "n_dim_in":n_dim_lstm_hidden
     },
     "sampler": {
-        "n_sample":5,
-        "param_tau":5.0
+        "n_sample":n_gmm_component,
+        "param_tau":1.0
     },
     "loss": {
         "empirical_wasserstein": {
@@ -65,7 +66,7 @@ cfg_auto_encoder = {
         }
     },
     "prior": {
-        "n_gmm_component":8,
+        "n_gmm_component":n_gmm_component,
         "n_dim":n_dim_latent
     }
 }
