@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+import pickle
 import numpy as np
 import scipy as sp
 from scipy.stats import multivariate_normal, norm
@@ -41,6 +42,8 @@ class MultiVariateGaussianMixture(object):
         assert self._mu.shape[1] == self._n_dim, msg
         assert self._cov.shape[1] == self._n_dim, msg
         assert self._cov.shape[2] == self._n_dim, msg
+
+        return True
 
     @property
     def n_component(self):
@@ -91,9 +94,17 @@ class MultiVariateGaussianMixture(object):
 
         return lst_ret
 
-    @property
-    def n_component(self):
-        return self._n_k
+    def save(self, file_path: str):
+        assert self._validate(), "corrupted inner structure detected."
+        with io.open(file_path, mode="wb") as ofs:
+            pickle.dump(self, ofs)
+
+    @classmethod
+    def load(cls, file_path: str):
+        with io.open(file_path, mode="rb") as ifs:
+            obj = pickle.load(ifs)
+        obj.__class__ = cls
+        return obj
 
     def density_plot(self, fig_and_ax=None, vis_range=None, n_mesh_bin=100, **kwargs):
         assert self._n_dim == 2, "visualization isn't available except 2-dimensional distribution."
