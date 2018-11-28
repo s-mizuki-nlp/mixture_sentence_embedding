@@ -39,6 +39,10 @@ class VariationalAutoEncoder(nn.Module):
     def sampler_size(self):
         return self._sampler.sample_size
 
+    @property
+    def n_dim_latent(self):
+        return self._decoder.n_dim_memory
+
     def forward(self, x_seq: torch.Tensor, x_seq_len: torch.Tensor, decoder_max_step: Optional[int] = None):
         """
 

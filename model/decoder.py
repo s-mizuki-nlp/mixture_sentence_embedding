@@ -32,6 +32,10 @@ class SelfAttentiveLSTMDecoder(nn.Module):
         c_0 = torch.zeros(size, self._n_dim_lstm_hidden)
         return h_0, c_0
 
+    @property
+    def n_dim_memory(self):
+        return self._n_dim_memory
+
     def forward(self, z_latent: torch.Tensor, n_step: int) -> torch.Tensor:
         """
         completely input-less sequence decoder.
