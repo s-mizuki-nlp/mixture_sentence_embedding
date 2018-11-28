@@ -73,14 +73,16 @@ cfg_auto_encoder = {
 
 cfg_corpus = {
     "corpus":"/home/sakae/Windows/dataset/wikipedia_en/sample.txt",
-    "n_sentence":100000,
-    "dictionary":"/home/sakae/Windows/dataset/wikipedia_en/vocab_wordpiece.dic"
+    "size":100000,
+    "dictionary":"/home/sakae/Windows/dataset/wikipedia_en/vocab_wordpiece.dic",
+    "log_file_path":f"log_train_progress_{__name__}.log"
 }
 
 cfg_optimizer = {
     "n_epoch":10,
-    "n_minibatch":100,
+    "n_minibatch":10,
     "optimizer":torch.optim.Adam,
     "lr":0.01,
-    "validation_split":0.1
+    # "validation_split":0.0,
+    "validation_interval":5
 }
