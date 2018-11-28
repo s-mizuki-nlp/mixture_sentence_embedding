@@ -16,7 +16,7 @@ from distribution.mixture import MultiVariateGaussianMixture, UniVariateGaussian
 
 class PaddedNLLLoss(_Loss):
 
-    def forward(self, y_ln_prob: torch.Tensor, y_true: torch.Tensor, y_len: List[int]):
+    def _elementwise_mean(self, y_ln_prob: torch.Tensor, y_true: torch.Tensor, y_len: Union[List[int], torch.Tensor]):
 
         y_ln_prob_seq = torch.cat(tuple(y_ln_prob[b,:seq_len,:] for b, seq_len in enumerate(y_len)), dim=0)
 
@@ -26,8 +26,31 @@ class PaddedNLLLoss(_Loss):
             y_true_seq = torch.cat(tuple(y_true[b,:seq_len] for b, seq_len in enumerate(y_len)), dim=0)
         else:
             raise AttributeError("unsupported input dimension.")
-
         loss = F.nll_loss(input=y_ln_prob_seq, target=y_true_seq)
+        return loss
+
+    def _samplewise_mean(self, y_ln_prob: torch.Tensor, y_true: torch.Tensor, y_len: Union[List[int], torch.Tensor]):
+
+        assert y_true.ndimension() == 2, "`samplewise_mean` requires two-dimensional `y_true` tensor."
+
+        n_mb = len(y_len)
+        loss = torch.tensor(0., dtype=torch.float, requires_grad=True)
+        for b, seq_len in enumerate(y_len):
+            y_ln_b = y_ln_prob[b,:seq_len,:]
+            y_true_b = y_true[b,:seq_len]
+            loss_b = F.nll_loss(input=y_ln_b, target=y_true_b, reduction="sum")
+            loss = torch.add(loss, loss_b)
+        loss = torch.div(loss, n_mb)
+        return loss
+
+    def forward(self, y_ln_prob: torch.Tensor, y_true: torch.Tensor, y_len: Union[List[int], torch.Tensor]):
+
+        if self.reduction == "elementwise_mean":
+            loss = self._elementwise_mean(y_ln_prob, y_true, y_len)
+        elif self.reduction == "samplewise_mean":
+            loss = self._samplewise_mean(y_ln_prob, y_true, y_len)
+        else:
+            raise NotImplementedError("unsupported reduction method: %s" % self.reduction)
 
         return loss
 
@@ -36,21 +59,22 @@ class MaskedKLDivLoss(_Loss):
 
     __EPS = 1E-5
 
-    def __init__(self, scale: float = 1.0, size_average=None, reduce=None, reduction='elementwise_mean'):
+    def __init__(self, scale: float = 1.0, size_average=None, reduce=None, reduction='samplewise_mean'):
 
         super(MaskedKLDivLoss, self).__init__(size_average, reduce, reduction)
 
         self._scale = scale
 
 
-    def forward(self, input_x: torch.Tensor, input_y: torch.Tensor, mask: torch.Tensor):
+    def forward(self, input: torch.Tensor, target: torch.Tensor, input_mask: torch.Tensor):
 
-        if mask.is_floating_point():
-            mask = mask.float()
-        n_elem = torch.sum(mask, dim=-1)
-        batch_loss = torch.sum( mask * input_x * (torch.log(input_x + self.__EPS) - torch.log(input_y + self.__EPS)), dim=-1 ) / n_elem
+        if input_mask.is_floating_point():
+            input_mask = input_mask.float()
+        # n_elem = torch.sum(input_mask, dim=-1)
+        # batch_loss = torch.sum(input_mask * input * (torch.log(input + self.__EPS) - torch.log(target + self.__EPS)), dim=-1) / n_elem
+        batch_loss = torch.sum(input_mask * input * (torch.log(input + self.__EPS) - torch.log(target + self.__EPS)), dim=-1)
 
-        if self.reduction == "elementwise_mean":
+        if self.reduction == "samplewise_mean":
             loss = torch.mean(batch_loss)
         elif self.reduction == "sum":
             loss = torch.sum(batch_loss)
