@@ -58,7 +58,9 @@ class LSTMEncoder(nn.Module):
         # ignore padded state
         v = nn.utils.rnn.pack_padded_sequence(embed, lengths=seq_len, batch_first=self.__batch_first)
 
-        h_0_c_0 = self._init_state(batch_size=batch_size)
+        # h_0_c_0 = self._init_state(batch_size=batch_size)
+        h_0_c_0 = None
+        self._lstm.flatten_parameters()
         h, h_n_c_n = self._lstm(v, h_0_c_0)
 
         # undo the packing operation
