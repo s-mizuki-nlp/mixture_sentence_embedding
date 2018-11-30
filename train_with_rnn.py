@@ -155,6 +155,7 @@ def main():
     bos, eos = list(dictionary.special_tokens)
     data_feeder = GeneralSentenceFeeder(corpus = corpus, tokenizer = tokenizer, dictionary = dictionary,
                                         n_minibatch=cfg_optimizer["n_minibatch"], validation_split=0.,
+                                        max_seq_len=cfg_corpus["max_seq_len"],
                                         # append `<eos>` at the end of each sentence
                                         bos_symbol=None, eos_symbol=eos)
 

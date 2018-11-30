@@ -56,7 +56,9 @@ class GeneralSequenceFeeder(AbstractFeeder):
 
 class GeneralSentenceFeeder(GeneralSequenceFeeder):
 
-    def __init__(self, corpus: Iterable, tokenizer: AbstractTokenizer, dictionary: Dictionary, n_minibatch=1, validation_split=0.0,
+    def __init__(self, corpus: Iterable, tokenizer: AbstractTokenizer, dictionary: Dictionary,
+                 n_minibatch: int = 1, validation_split: float = 0.0,
+                 max_seq_len: Optional[int] = None,
                  bos_symbol: Optional[str] = None, eos_symbol: Optional[str] = None):
         """
         extension of the GeneralSequenceFeeder class that is customized to sentence feed.
@@ -67,11 +69,13 @@ class GeneralSentenceFeeder(GeneralSequenceFeeder):
         :param dictionary: token-to-index encoder
         :param n_minibatch: minibatch size
         :param validation_split: if enabled, the fraction of the minibatch is splitted into validation set.
+        :param max_seq_len: maximum sequence length. longer sequence will be trimmed. DEFAULT:None
         :param bos_symbol: beginning-of-sentence symbol. e.g. `<bos>`
         :param eos_symbol: end-of-sentence symbol. e.g. `<eos>`
         """
         super(__class__, self).__init__(corpus, tokenizer, dictionary, n_minibatch, validation_split)
 
+        self._max_seq_len = max_seq_len
         self._bos = bos_symbol
         self._eos = eos_symbol
         if self._bos is not None:
@@ -88,12 +92,19 @@ class GeneralSentenceFeeder(GeneralSequenceFeeder):
     def _init_iter_batch(self):
 
         iter_token = self._tokenizer.tokenize(self._corpus)
+        # trim sequence length
+        if self._max_seq_len is not None:
+            iter_token = (lst_token[:self._max_seq_len] for lst_token in iter_token)
+
+        # prepend/append special tokens
         if self._mode == "bos":
             iter_token = ([self._bos] + lst_token for lst_token in iter_token)
         elif self._mode == "eos":
             iter_token = (lst_token + [self._eos] for lst_token in iter_token)
         elif self._mode == "both":
             iter_token = ([self._bos] + lst_token + [self._eos] for lst_token in iter_token)
+
+        # transform to integer sequence
         iter_token_idx = self._dictionary.iter_transform(iter_token)
 
         return iter_token_idx

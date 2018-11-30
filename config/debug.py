@@ -83,8 +83,9 @@ else:
     raise NotImplementedError(f"unknown environment:{_hostname}")
 print(f"dataset directory:{dataset_dir}")
 cfg_corpus = {
-    "corpus":os.path.join(dataset_dir, "wikipedia_en/sample_sorted.txt"),
+    "corpus":os.path.join(dataset_dir, "wikipedia_en/sample.txt"),
     "size":100000,
+    "max_seq_len":80,
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
 }
