@@ -268,6 +268,7 @@ def main():
             else:
                 s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
                 logger.write(s_record)
+            logger.flush()
 
             ## output metrics
             if args.verbose:
