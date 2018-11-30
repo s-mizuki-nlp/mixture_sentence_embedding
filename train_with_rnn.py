@@ -197,10 +197,12 @@ def main():
     ## variational autoencoder
     model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
                                    set_to_state_decoder=decoder, state_to_seq_decoder=predictor)
+    model.to(device=args.device)
+
     ## loss layers
-    loss_wasserstein = EmpiricalSlicedWassersteinDistance(**cfg_auto_encoder["loss"]["empirical_wasserstein"])
-    loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
-    loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
+    loss_wasserstein = EmpiricalSlicedWassersteinDistance(**cfg_auto_encoder["loss"]["empirical_wasserstein"]).to(device=args.device)
+    loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean").to(device=args.device)
+    loss_reconst = PaddedNLLLoss(reduction="samplewise_mean").to(device=args.device)
 
     # optimizer
     optimizer = cfg_optimizer["optimizer"](model.parameters(), lr=cfg_optimizer["lr"])
