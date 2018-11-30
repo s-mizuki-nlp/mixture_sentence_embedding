@@ -110,8 +110,8 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         v_z_posterior = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
         reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior, target=v_z_prior)
         ## kullback-leibler divergence on \alpha
+        reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
         if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
-            reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
             reg_loss = reg_loss_wd + reg_loss_kldiv
         else:
             reg_loss = reg_loss_wd
