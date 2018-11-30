@@ -13,7 +13,7 @@ class LSTMEncoder(nn.Module):
 
     def __init__(self, n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional,
                  embedding_layer: Optional[nn.Embedding] = None,
-                 highway=False, return_state=False, **kwargs):
+                 highway=False, return_state=False, device=torch.device("cpu"), **kwargs):
 
         super(__class__, self).__init__()
 
@@ -27,6 +27,7 @@ class LSTMEncoder(nn.Module):
         self._bidirectional = bidirectional
         self._highway = highway
         self._return_state = return_state
+        self._device = device
 
         if embedding_layer is not None:
             self._embed = embedding_layer
@@ -38,8 +39,8 @@ class LSTMEncoder(nn.Module):
     def _init_state(self, batch_size):
         # zero init
         n_dim = self._n_lstm_layer*2 if self._bidirectional else self._n_lstm_layer
-        h_0 = torch.zeros(n_dim, batch_size, self._n_dim_embedding)
-        c_0 = torch.zeros(n_dim, batch_size, self._n_dim_embedding)
+        h_0 = torch.zeros(n_dim, batch_size, self._n_dim_embedding, device=self._device)
+        c_0 = torch.zeros(n_dim, batch_size, self._n_dim_embedding, device=self._device)
         return h_0, c_0
 
     def forward(self, x_seq, seq_len):
@@ -80,10 +81,10 @@ class GMMLSTMEncoder(LSTMEncoder):
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
                  encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer,
                  custom_embedding_layer: Optional[nn.Embedding] = None,
-                 highway: bool=False, apply_softmax: bool=True, return_state: bool=False, **kwargs):
+                 highway: bool=False, apply_softmax: bool=True, return_state: bool=False, device=torch.device("cpu"), **kwargs):
 
         super(__class__, self).__init__(n_vocab, n_dim_embedding, n_dim_lstm_hidden, n_lstm_layer, bidirectional,
-                                        custom_embedding_layer, highway, return_state, **kwargs)
+                                        custom_embedding_layer, highway, return_state, device, **kwargs)
         self._enc_alpha = encoder_alpha
         self._enc_mu = encoder_mu
         self._enc_sigma = encoder_sigma

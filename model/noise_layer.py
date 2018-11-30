@@ -11,13 +11,14 @@ import numpy as np
 
 class GMMSampler(nn.Module):
 
-    def __init__(self, n_sample: int, param_tau: float, debug=False):
+    def __init__(self, n_sample: int, param_tau: float, device=torch.device("cpu"), debug=False):
 
         super().__init__()
 
         self._n_sample = n_sample
         self._tau = param_tau
         self._debug = debug
+        self._device = device
 
     @property
     def tau(self) -> float:
@@ -46,7 +47,7 @@ class GMMSampler(nn.Module):
 
         rand_unif = np.random.uniform(size=(size, n_dim)).astype(np.float32)
         v = np.log(-np.log(rand_unif))
-        t = torch.tensor(data=v, dtype=torch.float, requires_grad=False)
+        t = torch.tensor(data=v, dtype=torch.float, requires_grad=False, device=self._device)
 
         return t
 
@@ -60,7 +61,7 @@ class GMMSampler(nn.Module):
         size = self._n_sample if size is None else size
 
         v = np.random.normal(size=(size, n_dim)).astype(np.float32)
-        t = torch.tensor(data=v, dtype=torch.float, requires_grad=False)
+        t = torch.tensor(data=v, dtype=torch.float, requires_grad=False, device=self._device)
 
         return t
 

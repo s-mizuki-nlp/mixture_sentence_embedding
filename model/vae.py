@@ -58,17 +58,20 @@ class VariationalAutoEncoder(nn.Module):
             v_alpha, v_mu, v_sigma = self._encoder.forward(x_seq, x_seq_len)
 
         # pack padded sequence while keeping torch.tensor object
-        lst_seq_len = x_seq_len.data.numpy()
-        lst_alpha = utils.pack_padded_sequence(v_alpha, lst_seq_len=lst_seq_len, dim=0, keep_torch_tensor=True)
-        lst_mu = utils.pack_padded_sequence(v_mu, lst_seq_len=lst_seq_len, dim=0, keep_torch_tensor=True)
-        lst_sigma = utils.pack_padded_sequence(v_sigma, lst_seq_len=lst_seq_len, dim=0, keep_torch_tensor=True)
+        # if x_seq_len.is_cuda:
+        #     lst_seq_len = x_seq_len.cpu().data.numpy()
+        # else:
+        #     lst_seq_len = x_seq_len.data.numpy()
+        lst_alpha = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        lst_mu = utils.pack_padded_sequence(v_mu, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        lst_sigma = utils.pack_padded_sequence(v_sigma, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
 
         # sample from posterior distribution
         v_z = self._sampler.forward(lst_vec_alpha=lst_alpha, lst_mat_mu=lst_mu, lst_mat_std=lst_sigma)
 
         # decode from latent representation vector set
         if decoder_max_step is None:
-            n_step = max(lst_seq_len) + 1
+            n_step = max(x_seq_len) + 1
         else:
             n_step = decoder_max_step
         v_dec_h = self._decoder.forward(z_latent=v_z, n_step=n_step)

@@ -34,12 +34,15 @@ class PaddedNLLLoss(_Loss):
         assert y_true.ndimension() == 2, "`samplewise_mean` requires two-dimensional `y_true` tensor."
 
         n_mb = len(y_len)
-        loss = torch.tensor(0., dtype=torch.float, requires_grad=True)
+        loss = None
         for b, seq_len in enumerate(y_len):
             y_ln_b = y_ln_prob[b,:seq_len,:]
             y_true_b = y_true[b,:seq_len]
             loss_b = F.nll_loss(input=y_ln_b, target=y_true_b, reduction="sum")
-            loss = torch.add(loss, loss_b)
+            if loss is None:
+                loss = loss_b
+            else:
+                loss = loss + loss_b
         loss = torch.div(loss, n_mb)
         return loss
 
@@ -85,12 +88,13 @@ class MaskedKLDivLoss(_Loss):
 
 class EmpiricalSlicedWassersteinDistance(_Loss):
 
-    def __init__(self, n_slice, scale=1.0, size_average=None, reduce=None, reduction='elementwise_mean'):
+    def __init__(self, n_slice, scale=1.0, size_average=None, reduce=None, reduction='elementwise_mean', device=torch.device("cpu")):
 
         super(EmpiricalSlicedWassersteinDistance, self).__init__(size_average, reduce, reduction)
 
         self._n_slice = n_slice
         self._scale = scale
+        self._device = device
 
     @property
     def scale(self):
@@ -104,7 +108,7 @@ class EmpiricalSlicedWassersteinDistance(_Loss):
             v = np.random.normal(size=n_dim*size).astype(np.float32).reshape((size, n_dim))
             v /= np.linalg.norm(v, axis=1, ord=2).reshape((-1,1))
 
-        t = torch.tensor(data=v, dtype=torch.float, requires_grad=requires_grad)
+        t = torch.tensor(data=v, dtype=torch.float, requires_grad=requires_grad, device=self._device)
 
         return t
 
@@ -114,7 +118,7 @@ class EmpiricalSlicedWassersteinDistance(_Loss):
         n_mb, n_dim = input.shape
 
         # sliced wesserstein distance
-        loss = torch.tensor(0., dtype=torch.float, requires_grad=True)
+        loss = torch.tensor(0., dtype=torch.float, requires_grad=True, device=self._device)
         for t in range(self._n_slice):
             t_theta = self._sample_circular(n_dim=n_dim)
             x_t,_ = torch.matmul(input, t_theta).topk(k=n_mb)

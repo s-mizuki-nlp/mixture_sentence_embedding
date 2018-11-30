@@ -73,7 +73,7 @@ def pad_numpy_sequence(lst_array: List[np.ndarray], max_len: int = None, dim: in
 
     return ret
 
-def pack_padded_sequence(packed_array: Union[np.ndarray, torch.Tensor], lst_seq_len: Union[List[int], np.ndarray], dim: int = 0,
+def pack_padded_sequence(packed_array: Union[np.ndarray, torch.Tensor], lst_seq_len: Union[List[int], np.ndarray, torch.Tensor], dim: int = 0,
                          keep_torch_tensor: bool = False) -> List[Union[np.ndarray, torch.Tensor]]:
     """
     pack the fixed-size padded numpy array or pytorch tensor into the list of variable-size numpy array

@@ -184,13 +184,13 @@ def main():
     for param_name in "alpha,mu,sigma".split(","):
         cfg_encoder["lstm"][f"encoder_{param_name}"] = MultiDenseLayer(**cfg_encoder[param_name])
     ## encoder
-    encoder = GMMLSTMEncoder(n_vocab=dictionary.n_vocab, **cfg_encoder["lstm"])
+    encoder = GMMLSTMEncoder(n_vocab=dictionary.n_vocab, device=args.device, **cfg_encoder["lstm"])
 
     ## sampler(from posterior)
-    sampler = GMMSampler(**cfg_auto_encoder["sampler"])
+    sampler = GMMSampler(device=args.device, **cfg_auto_encoder["sampler"])
 
     ## decoder
-    decoder = SelfAttentiveLSTMDecoder(**cfg_auto_encoder["decoder"])
+    decoder = SelfAttentiveLSTMDecoder(device=args.device, **cfg_auto_encoder["decoder"])
     ## prediction layer
     predictor = SimplePredictor(n_dim_out=dictionary.n_vocab, log=True, **cfg_auto_encoder["predictor"])
 
@@ -200,9 +200,9 @@ def main():
     model.to(device=args.device)
 
     ## loss layers
-    loss_wasserstein = EmpiricalSlicedWassersteinDistance(**cfg_auto_encoder["loss"]["empirical_wasserstein"]).to(device=args.device)
-    loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean").to(device=args.device)
-    loss_reconst = PaddedNLLLoss(reduction="samplewise_mean").to(device=args.device)
+    loss_wasserstein = EmpiricalSlicedWassersteinDistance(**cfg_auto_encoder["loss"]["empirical_wasserstein"])
+    loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
+    loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
     # optimizer
     optimizer = cfg_optimizer["optimizer"](model.parameters(), lr=cfg_optimizer["lr"])

@@ -12,7 +12,8 @@ from .attention import SimpleGlobalAttention
 class SelfAttentiveLSTMDecoder(nn.Module):
 
     def __init__(self, n_dim_lstm_hidden: int, n_dim_memory: int,
-                 custom_attention_layer: Optional[SimpleGlobalAttention] = None):
+                 custom_attention_layer: Optional[SimpleGlobalAttention] = None,
+                 device=torch.device("cpu")):
 
         super(__class__, self).__init__()
 
@@ -26,10 +27,11 @@ class SelfAttentiveLSTMDecoder(nn.Module):
             self._attention_layer = SimpleGlobalAttention(dim_query=n_dim_query, dim_key=n_dim_memory)
 
         self._lstm_cell = nn.LSTMCell(input_size=n_dim_memory, hidden_size=n_dim_lstm_hidden)
+        self._device = device
 
     def _init_state(self, size: int):
-        h_0 = torch.zeros(size, self._n_dim_lstm_hidden)
-        c_0 = torch.zeros(size, self._n_dim_lstm_hidden)
+        h_0 = torch.zeros(size, self._n_dim_lstm_hidden, device=self._device)
+        c_0 = torch.zeros(size, self._n_dim_lstm_hidden, device=self._device)
         return h_0, c_0
 
     @property
