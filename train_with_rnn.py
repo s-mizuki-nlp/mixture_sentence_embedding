@@ -123,7 +123,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
 
     # compute metrics
     metrics = {
-        "max_alpha":float(np.max(v_alpha.data.numpy())),
+        "max_alpha":float(torch.max(v_alpha)),
         "wd":float(reg_loss_wd),
         "kldiv":float(reg_loss_kldiv),
         "nll":float(reconst_loss),
