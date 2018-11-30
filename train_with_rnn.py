@@ -49,6 +49,7 @@ def _parse_args():
     parser.add_argument("--config_module", "-c", required=True, type=str, help="config module name. example: `config.default`")
     parser.add_argument("--save_dir", "-s", required=True, type=str, help="directory for saving trained model")
     parser.add_argument("--device", "-d", required=False, type=str, default="cpu", help="computing device. DEFAULT:cpu")
+    parser.add_argument("--log_validation_only", action="store_true", help="record validation metrics only. DEFAULT:False")
     parser.add_argument("--verbose", action="store_true", help="output verbosity")
     args = parser.parse_args()
 
@@ -122,11 +123,14 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         optimizer.step()
 
     # compute metrics
+    nll = float(reconst_loss)
+    nll_token = nll * len(lst_seq_len) / sum(lst_seq_len) # lnq(x|z)*N_sentence/N_token
     metrics = {
         "max_alpha":float(torch.max(v_alpha)),
         "wd":float(reg_loss_wd),
         "kldiv":float(reg_loss_kldiv),
-        "nll":float(reconst_loss),
+        "nll":nll,
+        "nll_token":nll_token,
         "elbo":float(reconst_loss) + float(reg_loss_wd)
     }
     return metrics
@@ -143,11 +147,15 @@ def main():
     cfg_corpus = config.cfg_corpus
     cfg_optimizer = config.cfg_optimizer
 
-    # instanciate corpora
+    # show important configurations
     print("corpus:")
     for k, v in cfg_corpus.items():
         print(f"\t{k}:{v}")
+    print("optimization:")
+    for k, v in cfg_optimizer.items():
+        print(f"\t{k}:{v}")
 
+    # instanciate corpora
     corpus = TextLoader(file_path=cfg_corpus["corpus"])
     tokenizer = CharacterTokenizer()
     dictionary = Dictionary.load(file_path=cfg_corpus["dictionary"])
@@ -222,11 +230,6 @@ def main():
         # iterate over mini-batch
         for train, _ in data_feeder:
             idx += 1
-            metrics = {
-                "epoch":n_epoch,
-                "processed":n_processed
-            }
-
             # training
             train_mode = not(idx % cfg_optimizer["validation_interval"] == 0)
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
@@ -237,18 +240,29 @@ def main():
                                            device=args.device,
                                            enable_kldiv=cfg_auto_encoder["loss"]["kldiv"]["enabled"],
                                            train_mode=train_mode)
-            metrics.update(metrics_batch)
             n_processed += len(lst_seq_len)
 
-            # logging
-            sep = "\t"
+            # logging and reporting
+            metrics = {
+                "epoch":n_epoch,
+                "processed":n_processed,
+                "mode":"train" if train_mode else "val"
+            }
+            metrics.update(metrics_batch)
             f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
-            if n_epoch == 0 and metrics["processed"] == 0:
+            sep = "\t"
+            ## output log file
+            if idx == 1:
                 s_header = sep.join(metrics.keys()) + "\n"
                 logger.write(s_header)
-            s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
-            logger.write(s_record)
+            if args.log_validation_only and train_mode:
+                # validation metric only & training mode -> do not output metrics
+                pass
+            else:
+                s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
+                logger.write(s_record)
 
+            ## output metrics
             if args.verbose:
                 prefix = "train" if train_mode else "val"
                 s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )

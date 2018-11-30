@@ -7,11 +7,11 @@ import torch.optim
 
 highway = False
 bidirectional = True
-n_dim_latent = 64
-n_dim_lstm_hidden = 128
-n_dim_embedding = 128
+n_dim_latent = 16
+n_dim_lstm_hidden = 16
+n_dim_embedding = 16
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
-n_gmm_component = 8
+n_gmm_component = 4
 
 cfg_auto_encoder = {
     "encoder": {
@@ -59,7 +59,7 @@ cfg_auto_encoder = {
     },
     "loss": {
         "empirical_wasserstein": {
-            "n_slice":100,
+            "n_slice":10,
             "scale":10.
         },
         "kldiv": {
@@ -93,7 +93,7 @@ cfg_corpus = {
 ## optimizer
 cfg_optimizer = {
     "n_epoch":10,
-    "n_minibatch":100,
+    "n_minibatch":10,
     "optimizer":torch.optim.Adam,
     "lr":0.001,
     # "validation_split":0.0,
