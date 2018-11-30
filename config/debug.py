@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+import sys,io,os
 import torch
 import torch.optim
 
@@ -72,13 +73,23 @@ cfg_auto_encoder = {
     }
 }
 
+## corpus location
+_hostname = os.uname()[1]
+if _hostname == "Ubuntu-Precision-Tower-3420":
+    dataset_dir = "/home/sakae/Windows/dataset/"
+elif _hostname == "iris":
+    dataset_dir = "/home/sakae/dataset/"
+else:
+    raise NotImplementedError(f"unknown environment:{_hostname}")
+print(f"dataset directory:{dataset_dir}")
 cfg_corpus = {
-    "corpus":"/home/sakae/Windows/dataset/wikipedia_en/sample.txt",
+    "corpus":os.path.join(dataset_dir, "/wikipedia_en/sample.txt"),
     "size":100000,
-    "dictionary":"/home/sakae/Windows/dataset/wikipedia_en/vocab_wordpiece.dic",
+    "dictionary":os.path.join(dataset_dir, "/wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
 }
 
+## optimizer
 cfg_optimizer = {
     "n_epoch":10,
     "n_minibatch":100,
