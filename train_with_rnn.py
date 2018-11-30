@@ -200,7 +200,7 @@ def main():
     model.to(device=args.device)
 
     ## loss layers
-    loss_wasserstein = EmpiricalSlicedWassersteinDistance(**cfg_auto_encoder["loss"]["empirical_wasserstein"])
+    loss_wasserstein = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["empirical_wasserstein"])
     loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
