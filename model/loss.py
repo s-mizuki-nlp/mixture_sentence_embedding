@@ -85,11 +85,16 @@ class MaskedKLDivLoss(_Loss):
 
 class EmpiricalSlicedWassersteinDistance(_Loss):
 
-    def __init__(self, n_slice, size_average=None, reduce=None, reduction='elementwise_mean'):
+    def __init__(self, n_slice, scale=1.0, size_average=None, reduce=None, reduction='elementwise_mean'):
 
         super(EmpiricalSlicedWassersteinDistance, self).__init__(size_average, reduce, reduction)
 
         self._n_slice = n_slice
+        self._scale = scale
+
+    @property
+    def scale(self):
+        return self._scale
 
     def _sample_circular(self, n_dim, size=None, requires_grad=False):
         if size is None:
@@ -118,7 +123,7 @@ class EmpiricalSlicedWassersteinDistance(_Loss):
             loss = torch.add(loss, torch.mean(torch.pow(x_t-y_t,2)))
 
         # it returns sample-wise mean
-        loss = torch.div(loss, self._n_slice)
+        loss = torch.div(loss, self._n_slice) * self._scale
 
         return loss
 
