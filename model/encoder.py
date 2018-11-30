@@ -62,7 +62,7 @@ class LSTMEncoder(nn.Module):
         h, h_n_c_n = self._lstm(v, h_0_c_0)
 
         # undo the packing operation
-        h, v_seq_len = nn.utils.rnn.pad_packed_sequence(h, batch_first=self.__batch_first, padding_value=0.)
+        h, v_seq_len = nn.utils.rnn.pad_packed_sequence(h, batch_first=self.__batch_first, padding_value=0., total_length=n_seq_len_max)
 
         if self._highway:
             h = torch.cat([h,embed], dim=-1)

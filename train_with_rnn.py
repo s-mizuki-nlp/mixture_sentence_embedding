@@ -12,6 +12,7 @@ import pickle
 import progressbar
 
 import torch
+from torch import nn
 
 wd = os.path.dirname(__file__)
 wd = "." if wd == "" else wd
@@ -49,19 +50,23 @@ def _parse_args():
     parser.add_argument("--config_module", "-c", required=True, type=str, help="config module name. example: `config.default`")
     parser.add_argument("--save_dir", "-s", required=True, type=str, help="directory for saving trained model")
     parser.add_argument("--device", "-d", required=False, type=str, default="cpu", help="computing device. DEFAULT:cpu")
+    parser.add_argument("--gpus", required=False, type=str, default="0", help="GPU device ids to be used for dataparallel processing. DEFAULT:0")
     parser.add_argument("--log_validation_only", action="store_true", help="record validation metrics only. DEFAULT:False")
     parser.add_argument("--verbose", action="store_true", help="output verbosity")
     args = parser.parse_args()
 
     if args.device.find("cuda") != -1:
         assert torch.cuda.is_available(), "GPU is unavailable but cuda device was specified."
+        args.gpus = [int(i) for i in args.gpus.split(",")]
+    else:
+        args.gpus = []
     args.device = torch.device(args.device)
 
     return args
 
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_wd, loss_reg_kldiv, lst_seq, lst_seq_len,
-                   device, enable_kldiv, train_mode):
+                   device, train_mode, cfg_auto_encoder):
 
     if train_mode:
         optimizer.zero_grad()
@@ -88,7 +93,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         v_x_out_len = torch.tensor(x_out_len, dtype=torch.long).to(device=device)
 
         ## empirical prior distribution
-        n_sample = len(x_in) * model.sampler_size
+        n_sample = len(x_in) * cfg_auto_encoder["sampler"]["n_sample"]
         v_z_prior = prior_distribution.random(size=n_sample)
         v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
 
@@ -102,11 +107,11 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
                                                                            decoder_max_step=max(x_out_len))
         # regularization losses(sample-wise mean)
         ## empirical sliced wasserstein distance
-        v_z_posterior = v_z_posterior.view((-1, model.n_dim_latent))
+        v_z_posterior = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
         reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior, target=v_z_prior)
         ## kullback-leibler divergence on \alpha
         reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
-        if enable_kldiv:
+        if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
             reg_loss = reg_loss_wd + reg_loss_kldiv
         else:
             reg_loss = reg_loss_wd
@@ -206,6 +211,8 @@ def main():
     ## variational autoencoder
     model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
                                    set_to_state_decoder=decoder, state_to_seq_decoder=predictor)
+    if len(args.gpus) > 1:
+        model = nn.DataParallel(model, device_ids = args.gpus)
     model.to(device=args.device)
 
     ## loss layers
@@ -238,8 +245,8 @@ def main():
                                            loss_reconst=loss_reconst, loss_reg_wd=loss_wasserstein, loss_reg_kldiv=loss_kldiv,
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
-                                           enable_kldiv=cfg_auto_encoder["loss"]["kldiv"]["enabled"],
-                                           train_mode=train_mode)
+                                           train_mode=train_mode,
+                                           cfg_auto_encoder=cfg_auto_encoder)
             n_processed += len(lst_seq_len)
 
             # logging and reporting
