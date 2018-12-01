@@ -85,6 +85,7 @@ print(f"dataset directory:{dataset_dir}")
 cfg_corpus = {
     "corpus":os.path.join(dataset_dir, "wikipedia_en/sample.txt"),
     "size":100000,
+    "min_seq_len":20,
     "max_seq_len":80,
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
