@@ -35,7 +35,7 @@ from model.decoder import SimplePredictor
 from model.noise_layer import GMMSampler
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
-from utility import generate_random_orthogonal_vectors
+from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance
 from model.loss import MaskedKLDivLoss
@@ -66,7 +66,7 @@ def _parse_args():
 
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_wd, loss_reg_kldiv, lst_seq, lst_seq_len,
-                   device, train_mode, cfg_auto_encoder):
+                   device, train_mode, cfg_auto_encoder, cfg_optimizer):
 
     if train_mode:
         optimizer.zero_grad()
@@ -125,6 +125,13 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
     # update model parameters
     if train_mode:
         loss.backward()
+        if cfg_optimizer["gradient_clip"] is not None:
+            nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg_optimizer["gradient_clip"])
+            # DEBUG
+            # max_grad = 0.
+            # for param in model.parameters():
+            #     max_grad = max(max_grad, np.max(np.abs(param.grad.cpu().data.numpy())))
+            # print(f"max grad:{max_grad}")
         optimizer.step()
 
     # compute metrics
@@ -185,10 +192,11 @@ def main():
     n_dim_gmm = cfg_auto_encoder["prior"]["n_dim"]
     n_prior_gmm_component = cfg_auto_encoder["prior"]["n_gmm_component"]
 
-    distance = -np.log(0.01)
+    # calculate l2 norm and stdev of the mean and stdev of prior distribution
+    l2_norm, std = calculate_prior_dist_params(expected_swd=cfg_auto_encoder["prior"]["expected_swd"], n_dim_latent=n_dim_gmm)
     vec_alpha = np.full(shape=n_prior_gmm_component, fill_value=1./n_prior_gmm_component)
-    mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, dist=distance)
-    vec_std = np.ones(shape=n_prior_gmm_component)
+    mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, l2_norm=l2_norm)
+    vec_std = np.ones(shape=n_prior_gmm_component) * std
     prior_distribution = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, vec_std=vec_std)
     path_prior = os.path.join(args.save_dir, "prior_distribution.gmm.pickle")
     prior_distribution.save(file_path=path_prior)
@@ -247,7 +255,8 @@ def main():
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
-                                           cfg_auto_encoder=cfg_auto_encoder)
+                                           cfg_auto_encoder=cfg_auto_encoder,
+                                           cfg_optimizer=cfg_optimizer)
             n_processed += len(lst_seq_len)
 
             # logging and reporting

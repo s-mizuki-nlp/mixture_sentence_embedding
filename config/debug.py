@@ -69,7 +69,8 @@ cfg_auto_encoder = {
     },
     "prior": {
         "n_gmm_component":n_gmm_component,
-        "n_dim":n_dim_latent
+        "n_dim":n_dim_latent,
+        "expected_swd":2.0
     }
 }
 
@@ -93,6 +94,7 @@ cfg_corpus = {
 
 ## optimizer
 cfg_optimizer = {
+    "gradient_clip":1.0,
     "n_epoch":10,
     "n_minibatch":10,
     "optimizer":torch.optim.Adam,
