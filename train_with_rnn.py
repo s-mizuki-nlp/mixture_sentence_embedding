@@ -207,7 +207,7 @@ def main():
     for param_name in "alpha,mu,sigma".split(","):
         cfg_encoder["lstm"][f"encoder_{param_name}"] = MultiDenseLayer(**cfg_encoder[param_name])
     ## encoder
-    encoder = GMMLSTMEncoder(n_vocab=dictionary.n_vocab, device=args.device, **cfg_encoder["lstm"])
+    encoder = GMMLSTMEncoder(n_vocab=dictionary.max_id+1, device=args.device, **cfg_encoder["lstm"])
 
     ## sampler(from posterior)
     sampler = GMMSampler(device=args.device, **cfg_auto_encoder["sampler"])
@@ -215,7 +215,7 @@ def main():
     ## decoder
     decoder = SelfAttentiveLSTMDecoder(device=args.device, **cfg_auto_encoder["decoder"])
     ## prediction layer
-    predictor = SimplePredictor(n_dim_out=dictionary.n_vocab, log=True, **cfg_auto_encoder["predictor"])
+    predictor = SimplePredictor(n_dim_out=dictionary.max_id+1, log=True, **cfg_auto_encoder["predictor"])
 
     ## variational autoencoder
     model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
