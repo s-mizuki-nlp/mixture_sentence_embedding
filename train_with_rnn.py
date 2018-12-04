@@ -137,8 +137,11 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
     # compute metrics
     nll = float(reconst_loss)
     nll_token = nll * len(lst_seq_len) / sum(lst_seq_len) # lnq(x|z)*N_sentence/N_token
+    mat_sigma = v_sigma.cpu().data.numpy().flatten()
+    mean_sigma = np.mean(mat_sigma[mat_sigma > 0])
     metrics = {
         "max_alpha":float(torch.max(v_alpha)),
+        "mean_sigma":float(mean_sigma),
         "wd":float(reg_loss_wd),
         "kldiv":float(reg_loss_kldiv),
         "nll":nll,
