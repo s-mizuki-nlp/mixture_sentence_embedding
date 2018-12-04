@@ -3,6 +3,7 @@
 
 import numpy as np
 from scipy.stats import norm
+from sklearn.metrics.pairwise import euclidean_distances
 
 def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float):
     """
@@ -30,3 +31,18 @@ def calculate_prior_dist_params(expected_swd: float, n_dim_latent: int):
     std = l2_norm / np.sqrt(n_dim_latent) + 1.
 
     return l2_norm, std
+
+
+def calculate_mean_l2_between_sample(t_z_posterior: np.ndarray):
+    
+    n_mb, n_latent, n_dim = t_z_posterior.shape
+    idx_triu = np.triu_indices(n=n_latent, k=1)
+    l2_dist = 0.
+    for b in range(n_mb):
+        mat_z_b = t_z_posterior[b]
+        mat_dist_b = euclidean_distances(mat_z_b, mat_z_b)
+        l2_dist = l2_dist + np.mean(mat_dist_b[idx_triu])
+
+    l2_dist /= n_mb
+
+    return l2_dist

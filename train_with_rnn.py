@@ -35,7 +35,7 @@ from model.decoder import SimplePredictor
 from model.noise_layer import GMMSampler
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
-from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params
+from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance
 from model.loss import MaskedKLDivLoss
@@ -107,8 +107,8 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
                                                                            decoder_max_step=max(x_out_len))
         # regularization losses(sample-wise mean)
         ## empirical sliced wasserstein distance
-        v_z_posterior = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
-        reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior, target=v_z_prior)
+        v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
+        reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior_v, target=v_z_prior)
         ## kullback-leibler divergence on \alpha
         reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
         if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
@@ -127,11 +127,6 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         loss.backward()
         if cfg_optimizer["gradient_clip"] is not None:
             nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg_optimizer["gradient_clip"])
-            # DEBUG
-            # max_grad = 0.
-            # for param in model.parameters():
-            #     max_grad = max(max_grad, np.max(np.abs(param.grad.cpu().data.numpy())))
-            # print(f"max grad:{max_grad}")
         optimizer.step()
 
     # compute metrics
@@ -139,8 +134,10 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
     nll_token = nll * len(lst_seq_len) / sum(lst_seq_len) # lnq(x|z)*N_sentence/N_token
     mat_sigma = v_sigma.cpu().data.numpy().flatten()
     mean_sigma = np.mean(mat_sigma[mat_sigma > 0])
+    mean_l2_dist = calculate_mean_l2_between_sample(t_z_posterior=v_z_posterior.cpu().data.numpy())
     metrics = {
         "max_alpha":float(torch.max(v_alpha)),
+        "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
         "wd":float(reg_loss_wd),
         "kldiv":float(reg_loss_kldiv),
