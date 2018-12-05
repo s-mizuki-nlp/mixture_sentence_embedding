@@ -125,10 +125,9 @@ class GMMLSTMEncoder(LSTMEncoder):
         z_mu = self._enc_mu(h)
         mu = z_mu * mask.float().unsqueeze(dim=-1)
 
-        # sigma = (N_b, N_t)
-        # sigma[b,t] = exp(MLP(h[b,t]))
+        # z_sigma = (N_b, N_t, D_z) or (N_b, N_t, 1)
+        # z_sigma[b,t,:] = exp(MLP(h[b,t,:]))
         z_sigma = self._enc_sigma(h)
-        z_sigma = z_sigma.squeeze(dim=-1)
         if z_sigma.ndimension() == 2:
             sigma = torch.exp(z_sigma) * mask.float()
         elif z_sigma.ndimension() == 3:

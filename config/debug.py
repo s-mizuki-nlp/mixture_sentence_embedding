@@ -23,6 +23,7 @@ cfg_auto_encoder = {
             "bidirectional":bidirectional,
             "highway":highway
         },
+        # if you want to disable predicting \alpha, just specify None
         "alpha": {
             "n_dim_in":n_dim_lstm_output,
             "n_dim_out":1,
@@ -39,7 +40,7 @@ cfg_auto_encoder = {
         },
         "sigma": {
             "n_dim_in":n_dim_lstm_output,
-            "n_dim_out":n_dim_latent,
+            "n_dim_out":1, # it must be either 1 or n_dim_latent.
             "n_dim_hidden":n_dim_lstm_output,
             "n_hidden":2,
             "activation_function":torch.relu
