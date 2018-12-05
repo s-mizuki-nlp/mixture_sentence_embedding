@@ -11,7 +11,7 @@ import numpy as np
 
 class GMMSampler(nn.Module):
 
-    def __init__(self, n_sample: int, param_tau: float, device=torch.device("cpu"), debug=False):
+    def __init__(self, n_sample: int, param_tau: float, expect_log_alpha: bool = False, device=torch.device("cpu"), debug=False):
 
         super().__init__()
 
@@ -19,6 +19,7 @@ class GMMSampler(nn.Module):
         self._tau = param_tau
         self._debug = debug
         self._device = device
+        self._expect_log_alpha = expect_log_alpha
 
     @property
     def tau(self) -> float:
@@ -35,6 +36,10 @@ class GMMSampler(nn.Module):
     @sample_size.setter
     def sample_size(self, value: int):
         self._n_sample = value
+
+    @property
+    def expect_log_alpha(self):
+        return self._expect_log_alpha
 
     def _sample_gumbel(self, n_dim: int, size: Optional[int] = None):
         """
@@ -79,17 +84,20 @@ class GMMSampler(nn.Module):
 
         return vec_z
 
-    def forward(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
+    def forward(self, lst_vec_alpha_component: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
         """
         sample `n_sample` random samples from gaussian mixture using both gumbel-softmax trick and re-parametrization trick.
 
-        :param lst_vec_alpha: list of the packed scale vectors
+        :param lst_vec_alpha_component: list of the packed scale vectors. if self.expect_log_alpha=True, input must be log-scale vectors.
         :param lst_mat_mu: list of the sequence of packed mean vectors
         :param lst_mat_std: list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
         :return: random samples with shape (n_mb, n_sample, n_dim)
         """
 
-        lst_vec_ln_alpha = [torch.log(vec_alpha) for vec_alpha in lst_vec_alpha]
+        if self._expect_log_alpha:
+            lst_vec_ln_alpha = lst_vec_alpha_component
+        else:
+            lst_vec_ln_alpha = [torch.log(vec_alpha) for vec_alpha in lst_vec_alpha_component]
         # gumbel-softmax trick + re-parametrization trick
         lst_mat_z = []
         lst_mat_alpha = []

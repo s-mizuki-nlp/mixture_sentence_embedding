@@ -3,6 +3,7 @@
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from typing import Optional
 from model.encoder import GMMLSTMEncoder
 from model.noise_layer import GMMSampler
@@ -12,11 +13,11 @@ from preprocess import utils
 class VariationalAutoEncoder(nn.Module):
 
     def __init__(self,
-                   seq_to_gmm_encoder: GMMLSTMEncoder,
-                   gmm_sampler: GMMSampler,
-                   set_to_state_decoder: SelfAttentiveLSTMDecoder,
-                   state_to_seq_decoder: nn.Module
-                   ):
+                 seq_to_gmm_encoder: GMMLSTMEncoder,
+                 gmm_sampler: GMMSampler,
+                 set_to_state_decoder: SelfAttentiveLSTMDecoder,
+                 state_to_seq_decoder: nn.Module
+                 ):
 
         super(__class__, self).__init__()
         self._encoder = seq_to_gmm_encoder
@@ -24,7 +25,7 @@ class VariationalAutoEncoder(nn.Module):
         self._decoder = set_to_state_decoder
         self._predictor = state_to_seq_decoder
 
-        assert seq_to_gmm_encoder._apply_softmax, "it expects scaled \alpha output."
+        assert seq_to_gmm_encoder._softmax_over_alpha, "it expects scaled \alpha output."
         assert not seq_to_gmm_encoder._return_state, "we don't user encoder output state."
 
     @property
@@ -53,21 +54,20 @@ class VariationalAutoEncoder(nn.Module):
 
         # encoder: Sequence to padded GMM parameters {\alpha, \mu, \sigma}
         if self._encoder._return_state:
-            v_alpha, v_mu, v_sigma, (h_n, c_n) = self._encoder.forward(x_seq, x_seq_len)
+            v_alpha, v_ln_alpha, v_mu, v_sigma, (h_n, c_n) = self._encoder.forward(x_seq, x_seq_len)
         else:
-            v_alpha, v_mu, v_sigma = self._encoder.forward(x_seq, x_seq_len)
+            v_alpha, v_ln_alpha, v_mu, v_sigma = self._encoder.forward(x_seq, x_seq_len)
 
         # pack padded sequence while keeping torch.tensor object
-        # if x_seq_len.is_cuda:
-        #     lst_seq_len = x_seq_len.cpu().data.numpy()
-        # else:
-        #     lst_seq_len = x_seq_len.data.numpy()
-        lst_alpha = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        if self._sampler.expect_log_alpha:
+            lst_alpha_component = utils.pack_padded_sequence(v_ln_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        else:
+            lst_alpha_component = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
         lst_mu = utils.pack_padded_sequence(v_mu, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
         lst_sigma = utils.pack_padded_sequence(v_sigma, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
 
         # sample from posterior distribution
-        v_z = self._sampler.forward(lst_vec_alpha=lst_alpha, lst_mat_mu=lst_mu, lst_mat_std=lst_sigma)
+        v_z = self._sampler.forward(lst_vec_alpha_component=lst_alpha_component, lst_mat_mu=lst_mu, lst_mat_std=lst_sigma)
 
         # decode from latent representation vector set
         if decoder_max_step is None:
