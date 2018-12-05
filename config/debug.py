@@ -55,7 +55,8 @@ cfg_auto_encoder = {
     },
     "sampler": {
         "n_sample":n_gmm_component,
-        "param_tau":1.0
+        "param_tau":1.0,
+        "expect_log_alpha":False
     },
     "loss": {
         "empirical_wasserstein": {

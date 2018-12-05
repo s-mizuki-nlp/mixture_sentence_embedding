@@ -25,7 +25,6 @@ class VariationalAutoEncoder(nn.Module):
         self._decoder = set_to_state_decoder
         self._predictor = state_to_seq_decoder
 
-        assert seq_to_gmm_encoder._softmax_over_alpha, "it expects scaled \alpha output."
         assert not seq_to_gmm_encoder._return_state, "we don't user encoder output state."
 
     @property
