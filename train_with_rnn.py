@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+from copy import deepcopy
 import argparse
 from contextlib import ExitStack
 import importlib
@@ -78,10 +79,14 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
 
         # create encoder input and decoder output(=ground truth)
         ## omit last `<eos>` symbol from the input sequence
+        x_in = []
+        for seq_len, seq in zip(lst_seq_len, lst_seq):
+            seq_b = deepcopy(seq)
+            del seq_b[seq_len-1]
+            x_in.append(seq_b)
         x_in_len = [seq_len - 1 for seq_len in lst_seq_len]
-        x_in = [seq[:-1] for seq in lst_seq]
-        x_out_len = lst_seq_len
         x_out = lst_seq
+        x_out_len = lst_seq_len
 
         # convert to torch.tensor
         ## input
@@ -105,6 +110,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         # forward computation of the VAE model
         v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y = model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len,
                                                                            decoder_max_step=max(x_out_len))
+
         # regularization losses(sample-wise mean)
         ## empirical sliced wasserstein distance
         v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
@@ -206,7 +212,7 @@ def main():
     cfg_encoder = cfg_auto_encoder["encoder"]
     ## MLP for \alpha, \mu, \sigma
     for param_name in "alpha,mu,sigma".split(","):
-        cfg_encoder["lstm"][f"encoder_{param_name}"] = MultiDenseLayer(**cfg_encoder[param_name])
+        cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
     ## encoder
     encoder = GMMLSTMEncoder(n_vocab=dictionary.max_id+1, device=args.device, **cfg_encoder["lstm"])
 
