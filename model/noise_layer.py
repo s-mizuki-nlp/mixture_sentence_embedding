@@ -11,7 +11,9 @@ import numpy as np
 
 class GMMSampler(nn.Module):
 
-    def __init__(self, n_sample: int, param_tau: float, expect_log_alpha: bool = False, device=torch.device("cpu"), debug=False):
+    def __init__(self, n_sample: int, param_tau: float, expect_log_alpha: bool = False,
+                 enable_gumbel_softmax_trick: bool = True,
+                 device=torch.device("cpu"), debug=False):
 
         super().__init__()
 
@@ -19,6 +21,7 @@ class GMMSampler(nn.Module):
         self._tau = param_tau
         self._debug = debug
         self._device = device
+        self._gumbel_softmax_trick = enable_gumbel_softmax_trick
         self._expect_log_alpha = expect_log_alpha
 
     @property
@@ -105,7 +108,10 @@ class GMMSampler(nn.Module):
         for vec_ln_alpha, mat_mu, mat_std in zip(lst_vec_ln_alpha, lst_mat_mu, lst_mat_std):
             # apply gumbel-softmax on vec_ln_alpha
             # mat_alpha = (n_sample, n_len)
-            mat_alpha = gumbel_softmax(logits=vec_ln_alpha.repeat((self._n_sample,1)), tau=self._tau)
+            if self._gumbel_softmax_trick:
+                mat_alpha = gumbel_softmax(logits=vec_ln_alpha.repeat((self._n_sample,1)), tau=self._tau)
+            else:
+                mat_alpha = torch.exp(vec_ln_alpha).repeat((self._n_sample,1))
             if self._debug:
                 lst_mat_alpha.append(mat_alpha)
 
