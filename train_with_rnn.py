@@ -154,6 +154,7 @@ def main():
 
     # import configuration
     config = importlib.import_module(name=args.config_module)
+    file_name_suffix = args.config_module
 
     cfg_auto_encoder = config.cfg_auto_encoder
     cfg_corpus = config.cfg_corpus
@@ -198,7 +199,7 @@ def main():
     mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, l2_norm=l2_norm)
     vec_std = np.ones(shape=n_prior_gmm_component) * std
     prior_distribution = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, vec_std=vec_std)
-    path_prior = os.path.join(args.save_dir, "prior_distribution.gmm.pickle")
+    path_prior = os.path.join(args.save_dir, f"prior_distribution.gmm.{file_name_suffix}.pickle")
     prior_distribution.save(file_path=path_prior)
 
     # instanciate variational autoencoder
@@ -290,7 +291,7 @@ def main():
             q.update(n_processed)
 
         # save progress
-        path_trained_model_e = os.path.join(args.save_dir, "trained_vae.model." + str(n_epoch))
+        path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch))
         print(f"saving...:{path_trained_model_e}")
         torch.save(model.state_dict(), path_trained_model_e)
 
