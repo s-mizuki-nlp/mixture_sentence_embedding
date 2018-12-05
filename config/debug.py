@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import sys,io,os
+import warnings
 import torch
 import torch.optim
 
@@ -24,13 +25,14 @@ cfg_auto_encoder = {
             "highway":highway
         },
         # if you want to disable predicting \alpha, just specify None
-        "alpha": {
-            "n_dim_in":n_dim_lstm_output,
-            "n_dim_out":1,
-            "n_dim_hidden":n_dim_lstm_output,
-            "n_hidden":2,
-            "activation_function":torch.relu
-        },
+        # "alpha": {
+        #     "n_dim_in":n_dim_lstm_output,
+        #     "n_dim_out":1,
+        #     "n_dim_hidden":n_dim_lstm_output,
+        #     "n_hidden":2,
+        #     "activation_function":torch.relu
+        # },
+        "alpha": None,
         "mu": {
             "n_dim_in":n_dim_lstm_output,
             "n_dim_out":n_dim_latent,
@@ -56,16 +58,17 @@ cfg_auto_encoder = {
     },
     "sampler": {
         "n_sample":n_gmm_component,
-        "param_tau":1.0,
-        "expect_log_alpha":True
+        "param_tau":0.1,
+        "expect_log_alpha":True,
+        "enable_gumbel_softmax_trick":True
     },
     "loss": {
         "empirical_wasserstein": {
             "n_slice":10,
-            "scale":10.
+            "scale":1.
         },
         "kldiv": {
-            "enabled":True,
+            "enabled":False,
             "scale":1.
         }
     },
@@ -101,6 +104,12 @@ cfg_optimizer = {
     "n_minibatch":10,
     "optimizer":torch.optim.Adam,
     "lr":0.001,
-    # "validation_split":0.0,
     "validation_interval":20
 }
+
+## assertion
+if cfg_auto_encoder["encoder"]["alpha"] is None:
+    if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
+        raise ValueError("you should disable kullback-leibler divergence when you don't predict alpha.")
+if not cfg_auto_encoder["sampler"]["enable_gumbel_softmax_trick"]:
+    warnings.warn("disabling gumbel-softmax trick will result in improper sampling from posterior distribution. ARE YOU OK?")
