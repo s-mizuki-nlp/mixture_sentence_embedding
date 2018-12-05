@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from .multi_layer import MultiDenseLayer
 from typing import Optional
+import numpy as np
 
 class LSTMEncoder(nn.Module):
 
@@ -81,7 +82,7 @@ class GMMLSTMEncoder(LSTMEncoder):
     __batch_first = True
 
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
-                 encoder_alpha: MultiDenseLayer, encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer,
+                 encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer, encoder_alpha: Optional[MultiDenseLayer] = None,
                  custom_embedding_layer: Optional[nn.Embedding] = None,
                  highway: bool=False, return_state: bool=False, device=torch.device("cpu"), **kwargs):
 
@@ -90,6 +91,10 @@ class GMMLSTMEncoder(LSTMEncoder):
         self._enc_alpha = encoder_alpha
         self._enc_mu = encoder_mu
         self._enc_sigma = encoder_sigma
+
+    @property
+    def is_predict_alpha(self):
+        return self._enc_alpha is not None
 
     def _masked_softmax(self, x: torch.Tensor, mask: torch.Tensor, dim=1):
         masked_vec = x * mask.float()
@@ -113,10 +118,14 @@ class GMMLSTMEncoder(LSTMEncoder):
             h, seq_len = super(__class__, self).forward(x_seq, seq_len)
             h_n_c_n = None
 
-        # ln_alpha = (N_b, N_t) = MLP(h[:,:])
-        # alpha = (N_b, N_t); alpha[b,:] = softmax(ln_alpha[b,:)
-        ln_alpha = self._enc_alpha(h)
-        ln_alpha = ln_alpha.squeeze(dim=-1)
+        # ln_alpha = (N_b, N_t) = MLP_{\alpha}(h[:,:]) if MLP is not None else 0.
+        # alpha = (N_b, N_t); alpha[b,:] = softmax(ln_alpha[b,:])*mask
+        if self._enc_alpha is not None:
+            ln_alpha = self._enc_alpha(h)
+            ln_alpha = ln_alpha.squeeze(dim=-1)
+        else:
+            ln_alpha = torch.zeros(mask.size(), dtype=torch.float32, device=self._device)
+
         alpha = self._masked_softmax(ln_alpha, mask, dim=1)
         ln_alpha = ln_alpha * mask.float()
 
