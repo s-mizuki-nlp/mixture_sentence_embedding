@@ -80,3 +80,17 @@ def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVa
     kldiv = np.sum(p_x._alpha * vec_ln_term)
 
     return kldiv
+
+
+def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, n_sample=int(1E5)):
+    """
+    calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
+    but all $\Sigma_k$ is diagonal matrix.
+
+    :param p_x: instance of MultiVariateGaussianMixture class.
+    :param p_y: instance of MultiVariateGaussianMixture class.
+    """
+    vec_x = p_x.random(size=n_sample)
+    kldiv = np.mean(p_x.logpdf(vec_x) - p_y.logpdf(vec_x))
+
+    return kldiv
