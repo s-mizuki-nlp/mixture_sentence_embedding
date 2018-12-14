@@ -9,6 +9,7 @@ from scipy.stats import multivariate_normal, norm
 from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
+from typing import Optional
 
 vector = np.array
 matrix = np.ndarray
@@ -18,7 +19,8 @@ class MultiVariateGaussianMixture(object):
 
     __EPS = 1E-5
 
-    def __init__(self, vec_alpha: vector, mat_mu: matrix, tensor_cov: tensor = None, vec_std: vector = None):
+    def __init__(self, vec_alpha: vector, mat_mu: matrix,
+                 tensor_cov: Optional[tensor] = None, mat_cov: Optional[matrix] = None, vec_std: Optional[vector] = None):
         self._n_k = len(vec_alpha)
         self._n_dim = mat_mu.shape[1]
         self._alpha = vec_alpha - self.__EPS
@@ -26,10 +28,18 @@ class MultiVariateGaussianMixture(object):
         self._mu = mat_mu
         if tensor_cov is not None:
             self._cov = tensor_cov
+            self._is_cov_diag = False
+            self._is_cov_iso = False
+        elif mat_cov is not None:
+            self._cov = np.stack([np.diag(vec_var) for vec_var in mat_cov])
+            self._is_cov_diag = True
+            self._is_cov_iso = False
         elif vec_std is not None:
             self._cov = np.stack([(std**2) * np.eye(self._n_dim) for std in vec_std])
+            self._is_cov_diag = True
+            self._is_cov_iso = True
         else:
-            raise AttributeError("either `tensor_cov` or `vec_std` must be specified.")
+            raise AttributeError("either `tensor_cov` or `mat_cov` or `vec_std` must be specified.")
         self._validate()
 
     def _validate(self):
@@ -52,6 +62,14 @@ class MultiVariateGaussianMixture(object):
     @property
     def n_dim(self):
         return self._n_dim
+
+    @property
+    def is_cov_diag(self):
+        return self._is_cov_diag
+
+    @property
+    def is_cov_iso(self):
+        return self._is_cov_iso
 
     @classmethod
     def random_generation(cls, n_k: int, n_dim: int, covariance_type="spherical", mu_range=None, cov_range=None):
