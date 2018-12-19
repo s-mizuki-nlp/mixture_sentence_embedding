@@ -59,7 +59,7 @@ def _kldiv_diag(mu_x: np.array, cov_x: np.ndarray, mu_y: np.array, cov_y: np.nda
     return kldiv
 
 
-def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture):
+def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture) -> float:
     """
     calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
     but all $\Sigma_k$ is diagonal matrix.
@@ -71,8 +71,8 @@ def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVa
 
     n_c_x, n_c_y = p_x.n_component, p_y.n_component
     vec_ln_term = np.zeros(n_c_x, dtype=np.float64)
-    for c_x in range(n_c_x):
-        alpha_c_x, mu_c_x, cov_c_x = p_x._alpha[c_x], p_x._mu[c_x], p_x._cov[c_x]
+    for c_x in range(n_c_x): # M
+        alpha_c_x, mu_c_x, cov_c_x = p_x._alpha[c_x], p_x._mu[c_x], p_x._cov[c_x] # j=1,2,...,M
         sum_pi_exp_c_x = sum([p_x._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_x._mu[c], p_x._cov[c])) for c in range(n_c_x)])
         sum_pi_exp_c_x_y = sum([p_y._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_y._mu[c], p_y._cov[c])) for c in range(n_c_y)])
         vec_ln_term[c_x] = np.log(sum_pi_exp_c_x) - np.log(sum_pi_exp_c_x_y)
@@ -82,7 +82,7 @@ def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVa
     return kldiv
 
 
-def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, n_sample=int(1E5)):
+def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, n_sample=int(1E5)) -> float:
     """
     calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
     but all $\Sigma_k$ is diagonal matrix.
