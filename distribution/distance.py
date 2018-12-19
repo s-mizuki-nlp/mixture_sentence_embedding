@@ -73,8 +73,8 @@ def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVa
     vec_ln_term = np.zeros(n_c_x, dtype=np.float64)
     for c_x in range(n_c_x): # M
         alpha_c_x, mu_c_x, cov_c_x = p_x._alpha[c_x], p_x._mu[c_x], p_x._cov[c_x] # j=1,2,...,M
-        sum_pi_exp_c_x = sum([p_x._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_x._mu[c], p_x._cov[c])) for c in range(n_c_x)])
-        sum_pi_exp_c_x_y = sum([p_y._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_y._mu[c], p_y._cov[c])) for c in range(n_c_y)])
+        sum_pi_exp_c_x = np.sum([p_x._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_x._mu[c], p_x._cov[c])) for c in range(n_c_x)])
+        sum_pi_exp_c_x_y = np.sum([p_y._alpha[c]*np.exp(-_kldiv_diag(mu_c_x, cov_c_x, p_y._mu[c], p_y._cov[c])) for c in range(n_c_y)])
         vec_ln_term[c_x] = np.log(sum_pi_exp_c_x) - np.log(sum_pi_exp_c_x_y)
 
     kldiv = np.sum(p_x._alpha * vec_ln_term)
