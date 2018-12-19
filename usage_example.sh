@@ -6,7 +6,6 @@ python ./train_with_rnn.py \
 --device=cpu \
 --verbose
 
-
 python ./train_with_rnn.py \
 --config_module=config.idx_000 \
 --save_dir=./saved_model/ \

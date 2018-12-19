@@ -90,10 +90,16 @@ else:
 print(f"dataset directory:{dataset_dir}")
 cfg_corpus = {
     "train":{
-        "corpus":os.path.join(dataset_dir, "wikipedia_en/sample.txt"),
-        "size":100000,
+        "corpus":os.path.join(dataset_dir, "wikipedia_en/sample_train.txt"),
+        "size":1000,
         "min_seq_len":20,
         "max_seq_len":80
+    },
+    "test":{
+        "corpus":os.path.join(dataset_dir, "wikipedia_en/sample_test.txt"),
+        "size":100,
+        "min_seq_len":None,
+        "max_seq_len":None
     },
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
@@ -103,7 +109,7 @@ cfg_corpus = {
 cfg_optimizer = {
     "gradient_clip":1.0,
     "n_epoch":10,
-    "n_minibatch":10,
+    "n_minibatch":30,
     "optimizer":torch.optim.Adam,
     "lr":0.001,
     "validation_interval":20

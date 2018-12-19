@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict
 import torch
 import numpy as np
 from scipy.stats import norm

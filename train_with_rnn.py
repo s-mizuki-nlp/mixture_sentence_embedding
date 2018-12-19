@@ -68,7 +68,7 @@ def _parse_args():
 
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_wd, loss_reg_kldiv, lst_seq, lst_seq_len,
-                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_phase: str):
+                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_phase: str) -> Dict[str, float]:
 
     if train_mode:
         optimizer.zero_grad()
@@ -147,15 +147,15 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
 
     # compute metrics
     n_sentence = len(x_out)
-    n_token_sum = sum(x_out_len)
+    n_token = sum(x_out_len)
     nll = float(reconst_loss)
-    nll_token = nll * n_sentence / n_token_sum # lnq(x|z)*N_sentence/N_token
+    nll_token = nll * n_sentence / n_token # lnq(x|z)*N_sentence/N_token
     mat_sigma = v_sigma.cpu().data.numpy().flatten()
     mean_sigma = np.mean(mat_sigma[mat_sigma > 0])
     mean_l2_dist = calculate_mean_l2_between_sample(t_z_posterior=v_z_posterior.cpu().data.numpy())
     metrics = {
         "n_sentence":n_sentence,
-        "n_token_sum":n_token_sum,
+        "n_token":n_token,
         "max_alpha":float(torch.max(v_alpha)),
         "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
@@ -218,10 +218,13 @@ def main():
         dict_data_feeder[corpus_type] = data_feeder_t
 
     # setup logger
-    path_log_file = cfg_corpus["log_file_path"]
-    if os.path.exists(path_log_file):
-        os.remove(path_log_file)
-    logger = io.open(path_log_file, mode="w")
+    dict_logger = {}
+    for phase in "train,test".split(","):
+        path_log_file = cfg_corpus["log_file_path"] + f".{phase}"
+        if os.path.exists(path_log_file):
+            os.remove(path_log_file)
+        logger = io.open(path_log_file, mode="w")
+        dict_logger[phase] = logger
 
     # instanciate variational autoencoder
 
@@ -274,22 +277,25 @@ def main():
     # start training
     n_epoch = cfg_optimizer["n_epoch"]
     # iterate over epoch
-    idx = 0
+    n_iteration = 0
+    n_processed = 0
     for n_epoch in range(n_epoch):
         print(f"epoch:{n_epoch}")
 
         #### train phase ####
-        print(f"phase:train")
-        cfg_corpus_t = cfg_corpus["train"]
-        n_processed = 0
+        phase = "train"
+        print(f"phase:{phase}")
+        logger = dict_logger[phase]
+        cfg_corpus_t = cfg_corpus[phase]
         q = progressbar.ProgressBar(max_value=cfg_corpus_t["size"])
-        q.update(n_processed)
+        n_progress = 0
+        q.update(n_progress)
         ## iterate over mini-batch
-        for train, _ in dict_data_feeder["train"]:
-            idx += 1
+        for train, _ in dict_data_feeder[phase]:
+            n_iteration += 1
             # training
             if cfg_optimizer["validation_interval"] is not None:
-                train_mode = not(idx % cfg_optimizer["validation_interval"] == 0)
+                train_mode = not(n_iteration % cfg_optimizer["validation_interval"] == 0)
             else:
                 train_mode = True
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
@@ -300,8 +306,10 @@ def main():
                                            device=args.device,
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
-                                           cfg_optimizer=cfg_optimizer)
+                                           cfg_optimizer=cfg_optimizer,
+                                           evaluation_phase=phase)
             n_processed += len(lst_seq_len)
+            n_progress += len(lst_seq_len)
 
             # logging and reporting
             metrics = {
@@ -313,7 +321,7 @@ def main():
             f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
             sep = "\t"
             ## output log file
-            if idx == 1:
+            if n_iteration == 1:
                 s_header = sep.join(metrics.keys()) + "\n"
                 logger.write(s_header)
             if args.log_validation_only and train_mode:
@@ -331,7 +339,7 @@ def main():
                 print(s_print)
 
             # next iteration
-            q.update(n_processed)
+            q.update(n_progress)
 
         # save progress
         path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch))
@@ -341,14 +349,15 @@ def main():
 
         #### test phase ####
         if not "test" in dict_data_feeder:
-            print("we do not have testset.")
+            print("we do not have testset. skip evaluation.")
             continue
 
-        # training phase
-        print(f"phase:test")
-        n_processed = 0
+        phase = "test"
+        print(f"phase:{phase}")
+        logger = dict_logger[phase]
+        lst_metrics = []
         ## iterate over mini-batch
-        for batch, _ in dict_data_feeder["test"]:
+        for batch, _ in dict_data_feeder[phase]:
             train_mode = False
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
@@ -358,38 +367,50 @@ def main():
                                            device=args.device,
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
-                                           cfg_optimizer=cfg_optimizer)
-            n_processed += len(lst_seq_len)
+                                           cfg_optimizer=cfg_optimizer,
+                                           evaluation_phase=phase)
+            lst_metrics.append(metrics_batch)
 
-            # logging and reporting
-            metrics = {
-                "epoch":n_epoch,
-                "processed":n_processed,
-                "mode":"train" if train_mode else "val"
-            }
-            metrics.update(metrics_batch)
-            f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
-            sep = "\t"
-            ## output log file
-            if idx == 1:
-                s_header = sep.join(metrics.keys()) + "\n"
-                logger.write(s_header)
-            if args.log_validation_only and train_mode:
-                # validation metric only & training mode -> do not output metrics
-                pass
-            else:
-                s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
-                logger.write(s_record)
-            logger.flush()
+        # logging and reporting
+        metrics = {
+            "epoch":n_epoch,
+            "processed":n_processed,
+            "mode":"test"
+        }
+        vec_n_sentence = np.array([m["n_sentence"] for m in lst_metrics])
+        vec_n_token = np.array([m["n_token"] for m in lst_metrics])
+        metrics["n_sentence"] = np.sum(vec_n_sentence)
+        metrics["n_token"] = np.sum(vec_n_token)
+        for metric_name in lst_metrics[0].keys():
+            vec_values = np.array([m[metric_name] for m in lst_metrics])
+            if metric_name in ["n_sentence","n_token"]:
+                continue
+            elif metric_name == "max_alpha": # maximum over all sentence
+                metrics[metric_name] = np.max(vec_values)
+            elif metric_name == "nll_token": # token-wise mean
+                metrics[metric_name] = np.sum(vec_n_token * vec_values) / np.sum(vec_n_token)
+            else: # sentence-wise mean
+                metrics[metric_name] = np.sum(vec_n_sentence * vec_values) / np.sum(vec_n_sentence)
 
-            ## output metrics
-            if args.verbose:
-                prefix = "train" if train_mode else "val"
-                s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )
-                print(s_print)
+        f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
+        sep = "\t"
+        ## output log file
+        if n_epoch == 0:
+            s_header = sep.join(metrics.keys()) + "\n"
+            logger.write(s_header)
+        s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
+        logger.write(s_record)
+        logger.flush()
 
-            # next iteration
-            q.update(n_processed)
+        ## output metrics
+        if args.verbose:
+            prefix = "test"
+            s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )
+            print(s_print)
+
+        ### proceed to next epoch ###
+    for logger in dict_logger.values():
+        logger.close()
 
 
 if __name__ == "__main__":
