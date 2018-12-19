@@ -172,7 +172,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
                                            prior_distribution=prior_distribution, method="analytical")
         metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-                                           prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=10000)
+                                           prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000)
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
 
     return metrics
