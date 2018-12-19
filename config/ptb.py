@@ -43,8 +43,8 @@ cfg_auto_encoder = {
         "sigma": {
             "n_dim_in":n_dim_lstm_output,
             # n_dim_out can be either 1 or n_dim_latent.
-            # "n_dim_out":n_dim_latent,
-            "n_dim_out":1,
+            "n_dim_out":n_dim_latent,
+            # "n_dim_out":1,
             "n_dim_hidden":n_dim_lstm_output,
             "n_hidden":2,
             "activation_function":torch.relu
@@ -60,24 +60,24 @@ cfg_auto_encoder = {
     },
     "sampler": {
         "n_sample":n_gmm_component,
-        "param_tau":0.1,
+        "param_tau":1.0,
         "expect_log_alpha":True,
         "enable_gumbel_softmax_trick":True
     },
     "loss": {
         "empirical_wasserstein": {
             "n_slice":100,
-            "scale":1.
+            "scale":1.0
         },
         "kldiv": {
             "enabled":True,
-            "scale":1.
+            "scale":1.0
         }
     },
     "prior": {
         "n_gmm_component":n_gmm_component,
         "n_dim":n_dim_latent,
-        "expected_swd":0.4
+        "expected_swd":2.0
     }
 }
 
@@ -109,8 +109,8 @@ cfg_corpus = {
 ## optimizer
 cfg_optimizer = {
     "gradient_clip":1.0,
-    "n_epoch":10,
-    "n_minibatch":10,
+    "n_epoch":20,
+    "n_minibatch":128,
     "optimizer":torch.optim.Adam,
     "lr":0.001,
     "validation_interval":20
