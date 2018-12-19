@@ -8,9 +8,9 @@ import torch.optim
 
 highway = False
 bidirectional = True
-n_dim_latent = 16
-n_dim_lstm_hidden = 16
-n_dim_embedding = 16
+n_dim_latent = 128
+n_dim_lstm_hidden = 128
+n_dim_embedding = 128
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
 n_gmm_component = 4
 
@@ -24,15 +24,15 @@ cfg_auto_encoder = {
             "bidirectional":bidirectional,
             "highway":highway
         },
-        # if you want to disable predicting \alpha, just specify None
-        # "alpha": {
-        #     "n_dim_in":n_dim_lstm_output,
-        #     "n_dim_out":1,
-        #     "n_dim_hidden":n_dim_lstm_output,
-        #     "n_hidden":2,
-        #     "activation_function":torch.relu
-        # },
-        "alpha": None,
+        # you can disable predicting \alpha by just specifying None
+        "alpha": {
+            "n_dim_in":n_dim_lstm_output,
+            "n_dim_out":1,
+            "n_dim_hidden":n_dim_lstm_output,
+            "n_hidden":2,
+            "activation_function":torch.relu
+        },
+        # "alpha": None,
         "mu": {
             "n_dim_in":n_dim_lstm_output,
             "n_dim_out":n_dim_latent,
@@ -42,7 +42,9 @@ cfg_auto_encoder = {
         },
         "sigma": {
             "n_dim_in":n_dim_lstm_output,
-            "n_dim_out":1, # it must be either 1 or n_dim_latent.
+            # n_dim_out can be either 1 or n_dim_latent.
+            # "n_dim_out":n_dim_latent,
+            "n_dim_out":1,
             "n_dim_hidden":n_dim_lstm_output,
             "n_hidden":2,
             "activation_function":torch.relu
@@ -64,18 +66,18 @@ cfg_auto_encoder = {
     },
     "loss": {
         "empirical_wasserstein": {
-            "n_slice":10,
+            "n_slice":100,
             "scale":1.
         },
         "kldiv": {
-            "enabled":False,
+            "enabled":True,
             "scale":1.
         }
     },
     "prior": {
         "n_gmm_component":n_gmm_component,
         "n_dim":n_dim_latent,
-        "expected_swd":2.0
+        "expected_swd":0.4
     }
 }
 
@@ -90,12 +92,17 @@ else:
 print(f"dataset directory:{dataset_dir}")
 cfg_corpus = {
     "train":{
-        "corpus":os.path.join(dataset_dir, "wikipedia_en/sample.txt"),
-        "size":100000,
-        "min_seq_len":20,
-        "max_seq_len":80
+        "corpus":os.path.join(dataset_dir, "language_modeling/ptb_mikolov/train.txt"),
+        "size":42068,
+        "min_seq_len":None,
+        "max_seq_len":None
     },
-    "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
+    "test":{
+        "corpus":os.path.join(dataset_dir, "language_modeling/ptb_mikolov/test.txt"),
+        "min_seq_len":None,
+        "max_seq_len":None
+    },
+    "dictionary":os.path.join(dataset_dir, "language_modeling/ptb_mikolov/vocab.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
 }
 
