@@ -9,8 +9,8 @@ import importlib
 from typing import List, Dict, Union, Any
 
 import numpy as np
-import pickle
 import progressbar
+import pprint
 
 import torch
 from torch import nn
@@ -43,7 +43,8 @@ from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
 from model.vae import VariationalAutoEncoder
-
+## used for evaluation
+from utility import calculate_kldiv
 
 def _parse_args():
 
@@ -67,7 +68,7 @@ def _parse_args():
 
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_wd, loss_reg_kldiv, lst_seq, lst_seq_len,
-                   device, train_mode, cfg_auto_encoder, cfg_optimizer):
+                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_phase: str):
 
     if train_mode:
         optimizer.zero_grad()
@@ -79,14 +80,23 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
 
         # create encoder input and decoder output(=ground truth)
         ## omit last `<eos>` symbol from the input sequence
+        ## x_in = [[i,have,a,pen],[he,like,mary],...]; x_in_len = [4,3,...]
+        ## x_out = [[i,have,a,pen,<eos>],[he,like,mary,<eos>],...]; x_out_len = [5,4,...]
+        ## encoder input
         x_in = []
         for seq_len, seq in zip(lst_seq_len, lst_seq):
             seq_b = deepcopy(seq)
             del seq_b[seq_len-1]
             x_in.append(seq_b)
         x_in_len = [seq_len - 1 for seq_len in lst_seq_len]
-        x_out = lst_seq
-        x_out_len = lst_seq_len
+        ## decoder output
+        if evaluation_phase == "train":
+            x_out = lst_seq
+            x_out_len = lst_seq_len
+        elif evaluation_phase == "test":
+            # ToDo: is it a correct evaluation method?
+            x_out = deepcopy(x_in)
+            x_out_len = deepcopy(x_in_len)
 
         # convert to torch.tensor
         ## input
@@ -108,8 +118,8 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         v_alpha_unif = torch.from_numpy(arr_unif).to(device=device)
 
         # forward computation of the VAE model
-        v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y = model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len,
-                                                                           decoder_max_step=max(x_out_len))
+        v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y, lst_v_alpha, lst_v_mu, lst_v_sigma = \
+            model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len, decoder_max_step=max(x_out_len))
 
         # regularization losses(sample-wise mean)
         ## empirical sliced wasserstein distance
@@ -136,21 +146,35 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         optimizer.step()
 
     # compute metrics
+    n_sentence = len(x_out)
+    n_token_sum = sum(x_out_len)
     nll = float(reconst_loss)
-    nll_token = nll * len(lst_seq_len) / sum(lst_seq_len) # lnq(x|z)*N_sentence/N_token
+    nll_token = nll * n_sentence / n_token_sum # lnq(x|z)*N_sentence/N_token
     mat_sigma = v_sigma.cpu().data.numpy().flatten()
     mean_sigma = np.mean(mat_sigma[mat_sigma > 0])
     mean_l2_dist = calculate_mean_l2_between_sample(t_z_posterior=v_z_posterior.cpu().data.numpy())
     metrics = {
+        "n_sentence":n_sentence,
+        "n_token_sum":n_token_sum,
         "max_alpha":float(torch.max(v_alpha)),
         "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
-        "wd":float(reg_loss_wd),
-        "kldiv":float(reg_loss_kldiv),
+        "eswd":float(reg_loss_wd),
+        "reg_alpha":float(reg_loss_kldiv),
         "nll":nll,
         "nll_token":nll_token,
-        "elbo":float(reconst_loss) + float(reg_loss_wd)
+        "total_cost":float(reconst_loss) + float(reg_loss_wd),
+        "kldiv_ana":None,
+        "kldiv_mc":None,
+        "elbo":None
     }
+    if evaluation_phase == "test":
+        metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
+                                           prior_distribution=prior_distribution, method="analytical")
+        metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
+                                           prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=10000)
+        metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
+
     return metrics
 
 
@@ -168,24 +192,30 @@ def main():
 
     # show important configurations
     print("corpus:")
-    for k, v in cfg_corpus.items():
-        print(f"\t{k}:{v}")
+    pprint.pprint(cfg_corpus)
     print("optimization:")
     for k, v in cfg_optimizer.items():
         print(f"\t{k}:{v}")
 
     # instanciate corpora
-    corpus = TextLoader(file_path=cfg_corpus["corpus"])
     tokenizer = CharacterTokenizer()
     dictionary = Dictionary.load(file_path=cfg_corpus["dictionary"])
-
     bos, eos = list(dictionary.special_tokens)
-    data_feeder = GeneralSentenceFeeder(corpus = corpus, tokenizer = tokenizer, dictionary = dictionary,
-                                        n_minibatch=cfg_optimizer["n_minibatch"], validation_split=0.,
-                                        min_seq_len=cfg_corpus["min_seq_len"],
-                                        max_seq_len=cfg_corpus["max_seq_len"],
-                                        # append `<eos>` at the end of each sentence
-                                        bos_symbol=None, eos_symbol=eos)
+
+    dict_data_feeder = {}
+    for corpus_type in "train,dev,test".split(","):
+        if not corpus_type in cfg_corpus:
+            continue
+        cfg_corpus_t = cfg_corpus[corpus_type]
+        corpus_t = TextLoader(file_path=cfg_corpus_t["corpus"])
+        data_feeder_t = GeneralSentenceFeeder(corpus = corpus_t,
+                                              tokenizer = tokenizer, dictionary = dictionary,
+                                              n_minibatch=cfg_optimizer["n_minibatch"], validation_split=0.,
+                                              min_seq_len=cfg_corpus_t["min_seq_len"],
+                                              max_seq_len=cfg_corpus_t["max_seq_len"],
+                                              # append `<eos>` at the end of each sentence
+                                              bos_symbol=None, eos_symbol=eos)
+        dict_data_feeder[corpus_type] = data_feeder_t
 
     # setup logger
     path_log_file = cfg_corpus["log_file_path"]
@@ -201,6 +231,8 @@ def main():
 
     # calculate l2 norm and stdev of the mean and stdev of prior distribution
     l2_norm, std = calculate_prior_dist_params(expected_swd=cfg_auto_encoder["prior"]["expected_swd"], n_dim_latent=n_dim_gmm)
+    print("prior distribution parameters.")
+    print(f"\tl2_norm:{l2_norm:2.3f}, stdev:{std:2.3f}")
     vec_alpha = np.full(shape=n_prior_gmm_component, fill_value=1./n_prior_gmm_component)
     mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, l2_norm=l2_norm)
     vec_std = np.ones(shape=n_prior_gmm_component) * std
@@ -246,15 +278,20 @@ def main():
     for n_epoch in range(n_epoch):
         print(f"epoch:{n_epoch}")
 
+        #### train phase ####
+        print(f"phase:train")
+        cfg_corpus_t = cfg_corpus["train"]
         n_processed = 0
-        q = progressbar.ProgressBar(max_value=cfg_corpus["size"])
+        q = progressbar.ProgressBar(max_value=cfg_corpus_t["size"])
         q.update(n_processed)
-
-        # iterate over mini-batch
-        for train, _ in data_feeder:
+        ## iterate over mini-batch
+        for train, _ in dict_data_feeder["train"]:
             idx += 1
             # training
-            train_mode = not(idx % cfg_optimizer["validation_interval"] == 0)
+            if cfg_optimizer["validation_interval"] is not None:
+                train_mode = not(idx % cfg_optimizer["validation_interval"] == 0)
+            else:
+                train_mode = True
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
@@ -300,6 +337,59 @@ def main():
         path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch))
         print(f"saving...:{path_trained_model_e}")
         torch.save(model.state_dict(), path_trained_model_e)
+
+
+        #### test phase ####
+        if not "test" in dict_data_feeder:
+            print("we do not have testset.")
+            continue
+
+        # training phase
+        print(f"phase:test")
+        n_processed = 0
+        ## iterate over mini-batch
+        for batch, _ in dict_data_feeder["test"]:
+            train_mode = False
+            lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
+            metrics_batch = main_minibatch(model=model, optimizer=optimizer,
+                                           prior_distribution=prior_distribution,
+                                           loss_reconst=loss_reconst, loss_reg_wd=loss_wasserstein, loss_reg_kldiv=loss_kldiv,
+                                           lst_seq=lst_seq, lst_seq_len=lst_seq_len,
+                                           device=args.device,
+                                           train_mode=train_mode,
+                                           cfg_auto_encoder=cfg_auto_encoder,
+                                           cfg_optimizer=cfg_optimizer)
+            n_processed += len(lst_seq_len)
+
+            # logging and reporting
+            metrics = {
+                "epoch":n_epoch,
+                "processed":n_processed,
+                "mode":"train" if train_mode else "val"
+            }
+            metrics.update(metrics_batch)
+            f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
+            sep = "\t"
+            ## output log file
+            if idx == 1:
+                s_header = sep.join(metrics.keys()) + "\n"
+                logger.write(s_header)
+            if args.log_validation_only and train_mode:
+                # validation metric only & training mode -> do not output metrics
+                pass
+            else:
+                s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
+                logger.write(s_record)
+            logger.flush()
+
+            ## output metrics
+            if args.verbose:
+                prefix = "train" if train_mode else "val"
+                s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )
+                print(s_print)
+
+            # next iteration
+            q.update(n_processed)
 
 
 if __name__ == "__main__":

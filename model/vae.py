@@ -60,8 +60,10 @@ class VariationalAutoEncoder(nn.Module):
         # pack padded sequence while keeping torch.tensor object
         if self._sampler.expect_log_alpha:
             lst_alpha_component = utils.pack_padded_sequence(v_ln_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+            lst_alpha = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
         else:
             lst_alpha_component = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+            lst_alpha = lst_alpha_component
         lst_mu = utils.pack_padded_sequence(v_mu, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
         lst_sigma = utils.pack_padded_sequence(v_sigma, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
 
@@ -79,4 +81,4 @@ class VariationalAutoEncoder(nn.Module):
         v_ln_prob_y = self._predictor.forward(v_dec_h)
 
         # return everything
-        return v_alpha, v_mu, v_sigma, v_z, v_ln_prob_y
+        return v_alpha, v_mu, v_sigma, v_z, v_ln_prob_y, lst_alpha, lst_mu, lst_sigma
