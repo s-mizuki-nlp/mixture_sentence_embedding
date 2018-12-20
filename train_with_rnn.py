@@ -386,7 +386,7 @@ def main():
             if metric_name in ["n_sentence","n_token"]:
                 continue
             elif metric_name == "max_alpha": # maximum over all sentence
-                metrics[metric_name] = np.max(vec_values)
+                metrics["mean_max_alpha"] = np.mean(vec_values)
             elif metric_name == "nll_token": # token-wise mean
                 metrics[metric_name] = np.sum(vec_n_token * vec_values) / np.sum(vec_n_token)
             else: # sentence-wise mean
