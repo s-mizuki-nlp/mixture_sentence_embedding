@@ -15,6 +15,14 @@ vector = np.array
 matrix = np.ndarray
 tensor = np.ndarray
 
+
+def _mvn_isotropic_logpdf(vec_x, vec_mu, mat_cov, eps=1E-5):
+    vec_std = np.maximum(eps, np.sqrt(np.diag(mat_cov)))
+    vec_z = (vec_x - vec_mu) / vec_std
+    q = np.sum(norm.logpdf(vec_z) - np.log(vec_std), axis=-1)
+    return q
+
+
 class MultiVariateGaussianMixture(object):
 
     __EPS = 1E-5
@@ -152,16 +160,22 @@ class MultiVariateGaussianMixture(object):
 
     def logpdf(self, vec_x: vector):
         if vec_x.ndim == 1:
-            v_ln_prob = self._ln_alpha + np.array([multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k]) for k in range(self._n_k)])
+            if self._is_cov_diag:
+                v_ln_prob = self._ln_alpha + np.array([_mvn_isotropic_logpdf(vec_x, self._mu[k], self._cov[k]) for k in range(self._n_k)])
+            else:
+                v_ln_prob = self._ln_alpha + np.array([multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k]) for k in range(self._n_k)])
             ln_prob = logsumexp(v_ln_prob)
         elif vec_x.ndim == 2:
             n_size = vec_x.shape[0]
             m_ln_prob = np.empty(shape=(n_size, self._n_k), dtype=np.float)
             for k in range(self._n_k):
-                m_ln_prob[:,k] = self._ln_alpha[k] + multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k])
+                if self._is_cov_diag:
+                    m_ln_prob[:,k] = self._ln_alpha[k] + _mvn_isotropic_logpdf(vec_x, self._mu[k], self._cov[k])
+                else:
+                    m_ln_prob[:,k] = self._ln_alpha[k] + multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k])
             ln_prob = logsumexp(m_ln_prob, axis=1)
         return ln_prob
-
+    
     def random(self, size: int, shuffle=True):
         """
         generate random samples from the distribution.
