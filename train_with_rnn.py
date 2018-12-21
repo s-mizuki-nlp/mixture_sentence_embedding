@@ -90,13 +90,8 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
             x_in.append(seq_b)
         x_in_len = [seq_len - 1 for seq_len in lst_seq_len]
         ## decoder output
-        if evaluation_phase == "train":
-            x_out = lst_seq
-            x_out_len = lst_seq_len
-        elif evaluation_phase == "test":
-            # ToDo: is it a correct evaluation method?
-            x_out = deepcopy(x_in)
-            x_out_len = deepcopy(x_in_len)
+        x_out = lst_seq
+        x_out_len = lst_seq_len
 
         # convert to torch.tensor
         ## input
