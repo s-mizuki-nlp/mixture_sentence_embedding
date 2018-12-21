@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
+from scipy.misc import logsumexp
 from sklearn.metrics.pairwise import euclidean_distances
 from typing import List, Tuple, Union, Iterator, Optional
 from .mixture import MultiVariateGaussianMixture
@@ -91,6 +92,9 @@ def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariat
     :param p_y: instance of MultiVariateGaussianMixture class.
     """
     vec_x = p_x.random(size=n_sample)
-    kldiv = np.mean(p_x.logpdf(vec_x) - p_y.logpdf(vec_x))
+    vec_x_ln_p = p_x.logpdf(vec_x)
+    vec_y_ln_p = p_y.logpdf(vec_x)
+    vec_w = np.exp(vec_x_ln_p - logsumexp(vec_x_ln_p))
+    kldiv = np.sum( vec_w * (vec_x_ln_p - vec_y_ln_p) )
 
     return kldiv
