@@ -185,7 +185,7 @@ class MultiVariateGaussianMixture(object):
         :return: generated samples
         """
         vec_r_k = np.random.multinomial(n=size, pvals=self._alpha)
-        mat_r_x = np.vstack([np.random.multivariate_normal(mean=self._mu[k], cov=self._cov[k], size=size_k) for k, size_k in enumerate(vec_r_k)])
+        mat_r_x = np.vstack([np.random.multivariate_normal(mean=self._mu[k], cov=self._cov[k], size=size_k, check_valid="ignore") for k, size_k in enumerate(vec_r_k)])
         if shuffle:
             np.random.shuffle(mat_r_x)
         return mat_r_x
