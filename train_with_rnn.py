@@ -53,6 +53,7 @@ def _parse_args():
     parser.add_argument("--save_dir", "-s", required=True, type=str, help="directory for saving trained model")
     parser.add_argument("--device", "-d", required=False, type=str, default="cpu", help="computing device. DEFAULT:cpu")
     parser.add_argument("--gpus", required=False, type=str, default="0", help="GPU device ids to be used for dataparallel processing. DEFAULT:0")
+    parser.add_argument("--save_every_epoch", action="store_true", help="save trained model at every epoch. DEFAULT:False")
     parser.add_argument("--log_validation_only", action="store_true", help="record validation metrics only. DEFAULT:False")
     parser.add_argument("--verbose", action="store_true", help="output verbosity")
     args = parser.parse_args()
@@ -270,11 +271,11 @@ def main():
     optimizer = cfg_optimizer["optimizer"](model.parameters(), lr=cfg_optimizer["lr"])
 
     # start training
-    n_epoch = cfg_optimizer["n_epoch"]
+    n_epoch_total = cfg_optimizer["n_epoch"]
     # iterate over epoch
     n_iteration = 0
     n_processed = 0
-    for n_epoch in range(n_epoch):
+    for n_epoch in range(n_epoch_total):
         print(f"epoch:{n_epoch}")
 
         #### train phase ####
@@ -337,9 +338,10 @@ def main():
             q.update(n_progress)
 
         # save progress
-        path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch))
-        print(f"saving...:{path_trained_model_e}")
-        torch.save(model.state_dict(), path_trained_model_e)
+        if args.save_every_epoch:
+            path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch))
+            print(f"saving...:{path_trained_model_e}")
+            torch.save(model.state_dict(), path_trained_model_e)
 
 
         #### test phase ####
@@ -377,7 +379,7 @@ def main():
         metrics["n_sentence"] = np.sum(vec_n_sentence)
         metrics["n_token"] = np.sum(vec_n_token)
         for metric_name in lst_metrics[0].keys():
-            vec_values = np.array([m[metric_name] for m in lst_metrics])
+            vec_values = np.array([np.nan if m[metric_name] is None else m[metric_name] for m in lst_metrics])
             if metric_name in ["n_sentence","n_token"]:
                 continue
             elif metric_name == "max_alpha": # maximum over all sentence
@@ -404,8 +406,15 @@ def main():
             print(s_print)
 
         ### proceed to next epoch ###
+
+    # end of epoch
     for logger in dict_logger.values():
         logger.close()
+
+    # save trained model
+    path_trained_model_e = os.path.join(args.save_dir, f"lstm_vae.{file_name_suffix}.model." + str(n_epoch_total))
+    print(f"saving...:{path_trained_model_e}")
+    torch.save(model.state_dict(), path_trained_model_e)
 
 
 if __name__ == "__main__":
