@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+from typing import Optional, Union, List, Any
 import pickle
 import numpy as np
 import scipy as sp
@@ -9,7 +10,7 @@ from scipy.stats import multivariate_normal, norm
 from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
-from typing import Optional
+
 
 vector = np.array
 matrix = np.ndarray
@@ -112,13 +113,45 @@ class MultiVariateGaussianMixture(object):
         return alpha, mu, cov
 
     @classmethod
-    def to_tuple(cls, vec_alpha, mat_mu, tensor_cov):
+    def to_tuple(cls, vec_alpha: vector, mat_mu: matrix, tensor_cov: tensor):
         lst_ret = []
         n_k = len(vec_alpha)
         for k in range(n_k):
             lst_ret.append((vec_alpha[k], mat_mu[k], tensor_cov[k]))
 
         return lst_ret
+
+    @classmethod
+    def concatenate(cls, lst_distribution: List["MultiVariateGaussianMixture"], lst_weight: Optional[Union[List[float], np.ndarray]] = None):
+        """
+        concatenate multiple gaussian mixture distribution into single mixture distribution.
+
+        :param lst_distribution: list of gaussian mixture instances.
+        :param lst_weight: list of relative weights that are applied to each instance.
+        """
+        n = len(lst_distribution)
+        if lst_weight is None:
+            lst_weight = np.full(n, fill_value=1./n)
+        else:
+            if isinstance(lst_weight, list):
+                lst_weight = np.array(lst_weight)
+            assert len(lst_weight) == len(lst_distribution), "length mismatch detected."
+            assert np.abs(np.sum(lst_weight) - 1.) < cls.__EPS, "sum of relative weight must be equal to 1."
+        # sanity check
+        n_dim = lst_distribution[0].n_dim
+        assert all([dist.n_dim == n_dim for dist in lst_distribution]), "dimension size mismatch detected."
+
+        # concatenate gaussian mixture parameters
+        vec_alpha = np.concatenate([w*dist._alpha for dist, w in zip(lst_distribution, lst_weight)])
+        mat_mu = np.vstack([dist._mu for dist in lst_distribution])
+        if all([dist.is_cov_diag for dist in lst_distribution]):
+            mat_cov = np.vstack([np.diag(dist._cov) for dist in lst_distribution])
+            dist_new = cls(vec_alpha=vec_alpha, mat_mu=mat_mu, mat_cov=mat_cov)
+        else:
+            tensor_cov = np.vstack([dist._cov for dist in lst_distribution])
+            dist_new = cls(vec_alpha=vec_alpha, mat_mu=mat_mu, tensor_cov=tensor_cov)
+
+        return dist_new
 
     def save(self, file_path: str):
         assert self._validate(), "corrupted inner structure detected."
