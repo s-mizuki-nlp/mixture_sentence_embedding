@@ -11,7 +11,7 @@ from .mixture import MultiVariateGaussianMixture
 # Earth Mover's Distance.
 def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np.ndarray] = None,
                          mat_x: Optional[np.ndarray] = None, mat_y: Optional[np.ndarray] = None,
-                         lambda_: float = 0.1, mean_err_threshold: float = 1E-5, n_iter_max: Optional[int] = None,
+                         lambda_: float = 0.1, epsilon: float = 0.01, n_iter_max: int = 20,
                          return_optimal_transport: bool = False):
     """
     calculate earth mover's distance between two point-mass distribution (ex. set of word vectors)
@@ -22,26 +22,22 @@ def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np
     assert vec_p.size == mat_dist.shape[0], "mat_dist.shape must be identical to (vec_p.size, vec_q.size)"
     assert vec_q.size == mat_dist.shape[1], "mat_dist.shape must be identical to (vec_p.size, vec_q.size)"
 
-    vec_b = np.ones_like(vec_q)
-    mat_k = np.exp(-mat_dist/lambda_)
+    vec_ln_p = np.log(vec_p)
+    vec_ln_q = np.log(vec_q)
+    vec_ln_a = np.zeros_like(vec_p, dtype=np.float) # vec_ln_p.copy()
+    vec_ln_b = np.zeros_like(vec_q, dtype=np.float) # vec_ln_q.copy()
+    mat_ln_k = -mat_dist / lambda_
 
-    n_iter_max = np.inf if n_iter_max is None else n_iter_max
-    n_iter = 0
-    while True:
-        vec_a = vec_p / mat_k.dot(vec_b)
-        vec_b = vec_q / mat_k.T.dot(vec_a)
+    for n_iter in range(n_iter_max):
 
-        mat_gamma = vec_a.reshape((-1,1)) * mat_k * vec_b.reshape((1,-1))
+        vec_ln_a = vec_ln_p - logsumexp(mat_ln_k + vec_ln_b.reshape(1,-1), axis=1)
+        vec_ln_b = vec_ln_q - logsumexp(mat_ln_k.T + vec_ln_a.reshape(1,-1), axis=1)
 
         # termination
-        ## average of absolute error of optimal mass transportation
-        err = np.mean(np.abs(np.sum(mat_gamma, axis=1) - vec_p))
-        if err < mean_err_threshold:
-            break
-
-        ## number of iteration
-        n_iter += 1
-        if n_iter >= n_iter_max:
+        ## difference with condition
+        mat_gamma = np.exp(vec_ln_a.reshape(-1,1) + mat_ln_k + vec_ln_b.reshape(1,-1))
+        err = np.mean(np.abs(mat_gamma.sum(axis=1) - vec_p))
+        if err < epsilon:
             break
 
     dist = np.sum(mat_gamma*mat_dist)
@@ -65,7 +61,7 @@ def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: M
     for i in range(n_c_x):
         for j in range(n_c_y):
             mat_dist[i,j] = _wasserstein_distance_sq_between_multivariate_normal_diag(
-                vec_mu_x=p_x._mu[i], vec_std_x=np.sqrt(p_x._cov[i]), vec_mu_y=p_y._mu[i], vec_std_y=np.sqrt(p_y._cov[i])
+                vec_mu_x=p_x._mu[i], vec_std_x=np.sqrt(p_x._cov[i]), vec_mu_y=p_y._mu[j], vec_std_y=np.sqrt(p_y._cov[j])
             )
     # in case you don't need minimization
     if n_c_x == 1: # vec_p = [1]
