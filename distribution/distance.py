@@ -7,35 +7,96 @@ from sklearn.metrics.pairwise import euclidean_distances
 from typing import List, Tuple, Union, Iterator, Optional
 from .mixture import MultiVariateGaussianMixture
 
+
+# Earth Mover's Distance.
 def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np.ndarray] = None,
                          mat_x: Optional[np.ndarray] = None, mat_y: Optional[np.ndarray] = None,
-                         lambda_: float = 0.1, mean_err_threshold: float = 1E-5, return_transport: bool = False):
+                         lambda_: float = 0.1, mean_err_threshold: float = 1E-5, n_iter_max: Optional[int] = None,
+                         return_optimal_transport: bool = False):
+    """
+    calculate earth mover's distance between two point-mass distribution (ex. set of word vectors)
+    """
     if mat_dist is None:
         assert (mat_x is not None) and (mat_y is not None), "you must specify either `mat_dist` or `(mat_x, mat_y)` pair."
         mat_dist = euclidean_distances(mat_x, mat_y)
     assert vec_p.size == mat_dist.shape[0], "mat_dist.shape must be identical to (vec_p.size, vec_q.size)"
     assert vec_q.size == mat_dist.shape[1], "mat_dist.shape must be identical to (vec_p.size, vec_q.size)"
 
-    vec_a = np.ones_like(vec_p)
     vec_b = np.ones_like(vec_q)
     mat_k = np.exp(-mat_dist/lambda_)
 
+    n_iter_max = np.inf if n_iter_max is None else n_iter_max
+    n_iter = 0
     while True:
         vec_a = vec_p / mat_k.dot(vec_b)
         vec_b = vec_q / mat_k.T.dot(vec_a)
 
         mat_gamma = vec_a.reshape((-1,1)) * mat_k * vec_b.reshape((1,-1))
+
+        # termination
+        ## average of absolute error of optimal mass transportation
         err = np.mean(np.abs(np.sum(mat_gamma, axis=1) - vec_p))
         if err < mean_err_threshold:
             break
 
+        ## number of iteration
+        n_iter += 1
+        if n_iter >= n_iter_max:
+            break
+
     dist = np.sum(mat_gamma*mat_dist)
 
-    if return_transport:
+    if return_optimal_transport:
         return dist, mat_gamma
     else:
         return dist
 
+
+def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, **kwargs):
+    """
+    wasserstein distance between gussian mixtures.
+    """
+    assert p_x.n_dim == p_y.n_dim, "dimension size mismatch detected."
+    assert p_x.is_cov_diag and p_y.is_cov_diag, "it supports gmm with diagonal covariance only."
+
+    vec_p, vec_q = p_x._alpha, p_y._alpha
+    n_c_x, n_c_y = p_x.n_component, p_y.n_component
+    mat_dist = np.zeros(shape=(n_c_x, n_c_y), dtype=np.float)
+    for i in range(n_c_x):
+        for j in range(n_c_y):
+            mat_dist[i,j] = _wasserstein_distance_sq_between_multivariate_normal_diag(
+                vec_mu_x=p_x._mu[i], vec_std_x=np.sqrt(p_x._cov[i]), vec_mu_y=p_y._mu[i], vec_std_y=np.sqrt(p_y._cov[i])
+            )
+    # in case you don't need minimization
+    if n_c_x == 1: # vec_p = [1]
+        return mat_dist.dot(vec_q)
+    if n_c_y == 1: # vec_q = [1]
+        return vec_p.dot(mat_dist)
+
+    wd = earth_mover_distance(vec_p=vec_p, vec_q=vec_q, mat_dist=mat_dist, **kwargs)
+
+    return wd
+
+
+def _wasserstein_distance_sq_between_multivariate_normal(vec_mu_x: np.array, mat_cov_x: np.ndarray, vec_mu_y: np.array, mat_cov_y: np.ndarray) -> float:
+    """
+    wasserstein distance between multivariate normal distributions
+    """
+    d_mu = np.sum((vec_mu_x - vec_mu_y) ** 2)
+    mat_cov_x_sqrt = np.sqrt(mat_cov_x)
+    d_cov = np.sum(np.diag(mat_cov_x + mat_cov_y - 2*np.sqrt(mat_cov_x_sqrt*mat_cov_y*mat_cov_x_sqrt)))
+
+    return d_mu + d_cov
+
+# wasserstein distance between multivariate normal with diagonal covariance matrix
+def _wasserstein_distance_sq_between_multivariate_normal_diag(vec_mu_x: np.array, vec_std_x: np.array, vec_mu_y: np.array, vec_std_y: np.array) -> float:
+    """
+    wasserstein distance between multivariate normal distributions with diagonal covariance matrix
+    """
+    d_mu = np.sum((vec_mu_x - vec_mu_y)**2)
+    d_cov = np.sum(vec_std_x**2 + vec_std_y**2 - 2*vec_std_x*vec_std_y)
+
+    return d_mu + d_cov
 
 def _kldiv_diag(mu_x: np.array, cov_x: np.ndarray, mu_y: np.array, cov_y: np.ndarray):
     """
