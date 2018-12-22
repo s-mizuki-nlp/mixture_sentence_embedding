@@ -18,6 +18,9 @@ tensor = np.ndarray
 
 
 def _mvn_isotropic_logpdf(vec_x, vec_mu, mat_cov, eps=1E-5):
+    """
+    log probability of the observation on multivariate normal distribution with diagonal covariance matrix.
+    """
     vec_std = np.maximum(eps, np.sqrt(np.diag(mat_cov)))
     vec_z = (vec_x - vec_mu) / vec_std
     q = np.sum(norm.logpdf(vec_z) - np.log(vec_std), axis=-1)
@@ -93,14 +96,18 @@ class MultiVariateGaussianMixture(object):
         mat_mu = np.random.uniform(low=rng_mu[0], high=rng_mu[1], size=n_k*n_dim).reshape((n_k, n_dim))
         if covariance_type == "identity":
             tensor_cov = np.array([np.eye(n_dim) for k in range(n_k)])
+            vec_std = np.ones(n_k, dtype=np.float)
+            ret = cls(vec_alpha, mat_mu, vec_std=vec_std)
         elif covariance_type == "spherical":
-            tensor_cov = np.array([np.random.uniform(low=rng_cov[0], high=rng_cov[1])*np.eye(n_dim) for k in range(n_k)])
+            vec_std = np.sqrt(np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_k))
+            ret = cls(vec_alpha, mat_mu, vec_std=vec_std)
         elif covariance_type == "diagonal":
-            tensor_cov = np.array([np.diag(np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim)) for k in range(n_k)])
+            mat_cov = np.vstack([np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim) for k in range(n_k)])
+            ret = cls(vec_alpha, mat_mu, mat_cov=mat_cov)
         else:
             raise NotImplementedError("unexpected input.")
 
-        return cls(vec_alpha, mat_mu, tensor_cov)
+        return ret
 
     @classmethod
     def to_tensor(cls, lst_of_tuple, normalize_alpha=False):
