@@ -295,3 +295,80 @@ class GMMSlicedWassersteinDistance_Parallel(GMMSlicedWassersteinDistance):
         _pool.close()
 
         return obj_ret
+
+
+class GMMSinkhornWassersteinDistance(_Loss):
+
+    def __init__(self, scale=1.0, sinkhorn_lambda=0.1, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
+
+        assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
+
+        super(GMMSinkhornWassersteinDistance, self).__init__(size_average, reduce, reduction)
+
+        self._scale = scale
+        self._lambda = sinkhorn_lambda
+        self._n_iter_max = sinkhorn_iter_max
+        self._threshold = sinkhorn_threshold
+        self._device = device
+
+    def _calculate_distance_matrix(self, v_mat_mu_x: torch.Tensor, v_mat_std_x: torch.Tensor, v_mat_mu_y: torch.Tensor, v_mat_std_y: torch.Tensor):
+
+        # l2_sq_mu = (n_c_x, n_c_y)
+        l2_sq_mu = torch.sum(v_mat_mu_x**2, dim=-1, keepdim=True) \
+                   + torch.transpose(torch.sum(v_mat_mu_y**2, dim=-1, keepdim=True),0,1) \
+                   - 2*torch.mm(v_mat_mu_x, torch.transpose(v_mat_mu_y,0,1))
+        # tr_sigma = (n_c_x, n_c_y)
+        tr_sigma = torch.sum(v_mat_std_x**2, dim=-1, keepdim=True) \
+                   + torch.transpose(torch.sum(v_mat_std_y**2, dim=-1, keepdim=True),0,1,) \
+                   - 2*torch.mm(v_mat_std_x, torch.transpose(v_mat_std_y,0,1))
+
+        return l2_sq_mu + tr_sigma
+
+    def _sinkhorn_algorithm(self, vec_p: torch.Tensor, vec_q: torch.Tensor, mat_dist: torch.Tensor):
+
+        vec_ln_p = torch.log(vec_p)
+        vec_ln_q = torch.log(vec_q)
+        vec_ln_a = torch.zeros_like(vec_p, dtype=torch.float, device=self._device)
+        vec_ln_b = torch.zeros_like(vec_q, dtype=torch.float, device=self._device)
+        mat_ln_k = -mat_dist / self._lambda
+
+        for n_iter in range(self._n_iter_max):
+
+            vec_ln_a_prev = vec_ln_a.detach().clone()
+            vec_ln_a = vec_ln_p - torch.logsumexp(mat_ln_k + vec_ln_b.view(1,-1), dim=-1)
+            vec_ln_b = vec_ln_q - torch.logsumexp(mat_ln_k + vec_ln_a.view(-1,1), dim=0)
+
+            # termination
+            ## difference with condition
+            err = (vec_ln_a.detach() - vec_ln_a_prev).abs().sum()
+            if err < self._threshold:
+                break
+
+        mat_gamma = torch.exp(vec_ln_a.view(-1,1) + mat_ln_k + vec_ln_b.view(1,-1))
+        dist = torch.sum(mat_gamma*mat_dist)
+
+        return dist, mat_gamma
+
+    def forward(self, lst_vec_alpha_x: List[torch.Tensor], lst_mat_mu_x: List[torch.Tensor], lst_mat_std_x: List[torch.Tensor],
+                vec_alpha_y: torch.Tensor, mat_mu_y: torch.Tensor, mat_std_y: torch.Tensor):
+        """
+        sample `n_sample` random samples from gaussian mixture using both gumbel-softmax trick and re-parametrization trick.
+
+        :param lst_vec_alpha: list of the packed scale vectors.
+        :param lst_mat_mu: list of the sequence of packed mean vectors
+        :param lst_mat_std: list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
+        :return: square of approximate wasserstein distance * scale between two GMMs
+        """
+
+        n_mb = len(lst_vec_alpha_x)
+        v_wd_sq = None
+        for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
+            v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
+            v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
+            if v_wd_sq is None:
+                v_wd_sq = v_wd_sq_b
+            else:
+                v_wd_sq = v_wd + v_wd_sq_b
+        v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
+
+        return v_wd_sq
