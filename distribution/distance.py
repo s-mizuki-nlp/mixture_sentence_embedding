@@ -48,7 +48,7 @@ def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np
         return dist
 
 
-def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, **kwargs):
+def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, return_distance_matrix=False, **kwargs):
     """
     wasserstein distance between gussian mixtures.
     """
@@ -71,7 +71,10 @@ def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: M
 
     wd = earth_mover_distance(vec_p=vec_p, vec_q=vec_q, mat_dist=mat_dist, **kwargs)
 
-    return wd
+    if return_distance_matrix:
+        return wd, mat_dist
+    else:
+        return wd
 
 
 def _wasserstein_distance_sq_between_multivariate_normal(vec_mu_x: np.array, mat_cov_x: np.ndarray, vec_mu_y: np.array, mat_cov_y: np.ndarray) -> float:
