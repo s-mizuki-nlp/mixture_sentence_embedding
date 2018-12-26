@@ -71,7 +71,7 @@ def _parse_args():
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
                    loss_reg_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
                    loss_reg_kldiv, lst_seq, lst_seq_len,
-                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_phase: str) -> Dict[str, float]:
+                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
 
     if train_mode:
         optimizer.zero_grad()
@@ -177,9 +177,11 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
         "kldiv_mc":None,
         "elbo":None
     }
-    if evaluation_phase == "test":
-        # metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-        #                                    prior_distribution=prior_distribution, method="analytical")
+    if "kldiv_ana" in evaluation_metrics:
+        metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
+                                           prior_distribution=prior_distribution, method="analytical")
+        metrics["elbo"] = metrics["nll"] + metrics["kldiv_ana"]
+    if "kldiv_mc" in evaluation_metrics:
         metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
                                            prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000)
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
@@ -247,7 +249,8 @@ def main():
     is_sliced_wasserstein = regularizer_name.find("sliced_wasserstein") != -1
 
     # calculate l2 norm and stdev of the mean and stdev of prior distribution
-    l2_norm, std = calculate_prior_dist_params(expected_wd=cfg_auto_encoder["prior"]["expected_wd"], n_dim_latent=n_dim_gmm, sliced_wasserstein=is_sliced_wasserstein)
+    expected_wd = cfg_auto_encoder["prior"].get("expected_wd", 1.0)
+    l2_norm, std = calculate_prior_dist_params(expected_wd=expected_wd, n_dim_latent=n_dim_gmm, sliced_wasserstein=is_sliced_wasserstein)
     ## overwrite auto values with user-defined values
     l2_norm = cfg_auto_encoder["prior"].get("l2_norm", l2_norm)
     std = cfg_auto_encoder["prior"].get("std", std)
@@ -327,7 +330,7 @@ def main():
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
                                            cfg_optimizer=cfg_optimizer,
-                                           evaluation_phase=phase)
+                                           evaluation_metrics=cfg_corpus[phase].get("evaluation_metrics",[]))
             n_processed += len(lst_seq_len)
             n_progress += len(lst_seq_len)
 
@@ -389,7 +392,7 @@ def main():
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
                                            cfg_optimizer=cfg_optimizer,
-                                           evaluation_phase=phase)
+                                           evaluation_metrics=cfg_corpus[phase].get("evaluation_metrics",[]))
             lst_metrics.append(metrics_batch)
 
         # logging and reporting

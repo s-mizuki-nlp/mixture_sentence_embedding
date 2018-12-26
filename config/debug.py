@@ -88,8 +88,8 @@ cfg_auto_encoder = {
         "n_dim":n_dim_latent,
         "expected_wd":2.0,
         # if you want, you can manually specify l2 norm and standard deviation
-        "l2_norm": 2.0,
-        "std": 1.0
+        # "l2_norm": 2.0,
+        # "std": 1.0
     }
 }
 
@@ -113,7 +113,8 @@ cfg_corpus = {
         "corpus":os.path.join(dataset_dir, "wikipedia_en/sample_test.txt"),
         "size":100,
         "min_seq_len":None,
-        "max_seq_len":None
+        "max_seq_len":None,
+        "evaluation_metrics":["kldiv_ana"]
     },
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
