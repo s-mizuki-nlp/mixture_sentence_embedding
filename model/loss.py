@@ -299,7 +299,7 @@ class GMMSlicedWassersteinDistance_Parallel(GMMSlicedWassersteinDistance):
 
 class GMMSinkhornWassersteinDistance(_Loss):
 
-    def __init__(self, scale=1.0, sinkhorn_lambda=0.1, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
+    def __init__(self, scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
 
         assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
 
@@ -333,7 +333,7 @@ class GMMSinkhornWassersteinDistance(_Loss):
         vec_ln_q = torch.log(vec_q)
         vec_ln_a = torch.zeros_like(vec_p, dtype=torch.float, device=self._device)
         vec_ln_b = torch.zeros_like(vec_q, dtype=torch.float, device=self._device)
-        mat_ln_k = -mat_dist / self._lambda
+        mat_ln_k = -mat_dist * self._lambda
 
         for n_iter in range(self._n_iter_max):
 
