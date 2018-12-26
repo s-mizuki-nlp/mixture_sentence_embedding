@@ -89,7 +89,13 @@ class MaskedKLDivLoss(_Loss):
 class EmpiricalSlicedWassersteinDistance(_Loss):
 
     def __init__(self, n_slice, scale=1.0, size_average=None, reduce=None, reduction='elementwise_mean', device=torch.device("cpu")):
+        """
+        sliced wasserstein distance using samples from source and target distributions
 
+        :param n_slice: number of slices. i.e. number of radon transformation
+        :param scale: scale parameter. output will be scale * distance
+        :param reduction: it must be `elementwise_mean`
+        """
         super(EmpiricalSlicedWassersteinDistance, self).__init__(size_average, reduce, reduction)
 
         self._n_slice = n_slice
@@ -300,6 +306,15 @@ class GMMSlicedWassersteinDistance_Parallel(GMMSlicedWassersteinDistance):
 class GMMSinkhornWassersteinDistance(_Loss):
 
     def __init__(self, scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
+        """
+        approximated wasserstein distance between two gaussian mixtures using sinkhorn algorithm.
+
+        :param scale: scale parameter. output will be scale * distance
+        :param sinkhorn_lambda: smoothing parameter of sinkhorn algorithm. it will be multiplied to distance matrix.
+        :param sinkhorn_iter_max: maximum number of iterations of sinkhorn algorithm.
+        :param sinkhorn_threshold: threshold that is used to detect convergence of sinkhorn algorithm.
+        :param reduction: it must be `samplewise_mean`
+        """
 
         assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
 
@@ -320,10 +335,15 @@ class GMMSinkhornWassersteinDistance(_Loss):
 
     def _calculate_distance_matrix(self, v_mat_mu_x: torch.Tensor, v_mat_std_x: torch.Tensor, v_mat_mu_y: torch.Tensor, v_mat_std_y: torch.Tensor):
 
+        n_dim = v_mat_mu_x.shape[-1]
         # l2_sq_mu = (n_c_x, n_c_y)
         l2_sq_mu = self._matrix_dist_l2_sq(v_mat_mu_x, v_mat_mu_y)
         # tr_sigma = (n_c_x, n_c_y)
-        tr_sigma = self._matrix_dist_l2_sq(v_mat_std_x, v_mat_std_y)
+        if v_mat_std_x.shape[-1] == n_dim:
+            v_mat_std_x_ = v_mat_std_x
+        else:
+            v_mat_std_x_ = v_mat_std_x.repeat(1, n_dim)
+        tr_sigma = self._matrix_dist_l2_sq(v_mat_std_x_, v_mat_std_y)
 
         return l2_sq_mu + tr_sigma
 
