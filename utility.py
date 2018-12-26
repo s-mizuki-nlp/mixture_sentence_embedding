@@ -29,11 +29,14 @@ def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float
     return mat_ret
 
 
-def calculate_prior_dist_params(expected_swd: float, n_dim_latent: int):
-    c = 1.22
-    l2_norm = np.sqrt(0.5*c*np.sqrt(n_dim_latent)*expected_swd)
-    std = l2_norm / np.sqrt(n_dim_latent) + 1.
+def calculate_prior_dist_params(expected_wd: float, n_dim_latent: int, sliced_wasserstein: bool):
+    if sliced_wasserstein:
+        c = 1.22
+        l2_norm = np.sqrt(0.5 * c * np.sqrt(n_dim_latent) * expected_wd)
+    else:
+        l2_norm = np.sqrt(0.5 * expected_wd)
 
+    std = l2_norm / np.sqrt(n_dim_latent) + 1.
     return l2_norm, std
 
 

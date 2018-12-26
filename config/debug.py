@@ -25,14 +25,14 @@ cfg_auto_encoder = {
             "highway":highway
         },
         # if you want to disable predicting \alpha, just specify None
-        # "alpha": {
-        #     "n_dim_in":n_dim_lstm_output,
-        #     "n_dim_out":1,
-        #     "n_dim_hidden":n_dim_lstm_output,
-        #     "n_hidden":2,
-        #     "activation_function":torch.relu
-        # },
-        "alpha": None,
+        "alpha": {
+            "n_dim_in":n_dim_lstm_output,
+            "n_dim_out":1,
+            "n_dim_hidden":n_dim_lstm_output,
+            "n_hidden":2,
+            "activation_function":torch.relu
+        },
+        # "alpha": None,
         "mu": {
             "n_dim_in":n_dim_lstm_output,
             "n_dim_out":n_dim_latent,
@@ -42,7 +42,7 @@ cfg_auto_encoder = {
         },
         "sigma": {
             "n_dim_in":n_dim_lstm_output,
-            "n_dim_out":1, # it must be either 1 or n_dim_latent.
+            "n_dim_out":n_dim_latent, # it must be either 1 or n_dim_latent.
             "n_dim_hidden":n_dim_lstm_output,
             "n_hidden":2,
             "activation_function":torch.relu
@@ -63,9 +63,20 @@ cfg_auto_encoder = {
         "enable_gumbel_softmax_trick":True
     },
     "loss": {
-        "empirical_wasserstein": {
-            "n_slice":10,
-            "scale":1.
+        "reg": {
+            # you can choose one of these regularizers:
+            # 1) empirical sliced wasserstein distance: d(E_x[p(z|x)],q(z))
+            # "empirical_sliced_wasserstein": {
+            #     "n_slice":10,
+            #     "scale":1.
+            # },
+            # 2) sinkhorn wasserstein distance: d(p(z|x),q(z))
+            "sinkhorn_wasserstein": {
+                "sinkhorn_lambda":0.1,
+                "sinkhorn_iter_max":100,
+                "sinkhorn_threshold":0.1,
+                "scale":1.0
+            }
         },
         "kldiv": {
             "enabled":False,
@@ -75,7 +86,10 @@ cfg_auto_encoder = {
     "prior": {
         "n_gmm_component":n_gmm_component,
         "n_dim":n_dim_latent,
-        "expected_swd":2.0
+        "expected_wd":2.0,
+        # if you want, you can manually specify l2 norm and standard deviation
+        "l2_norm": 2.0,
+        "std": 1.0
     }
 }
 
@@ -116,8 +130,24 @@ cfg_optimizer = {
 }
 
 ## assertion
+# MLP_{\alpha} vs KL(p(\alpha|x) || q(\alpha))
 if cfg_auto_encoder["encoder"]["alpha"] is None:
     if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
         raise ValueError("you should disable kullback-leibler divergence when you don't predict alpha.")
+
 if not cfg_auto_encoder["sampler"]["enable_gumbel_softmax_trick"]:
     warnings.warn("disabling gumbel-softmax trick will result in improper sampling from posterior distribution. ARE YOU OK?")
+
+# regularizer
+if "empirical_sliced_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
+    if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
+        raise ValueError("you can't define different regularizers simultaneously.")
+    else:
+        pass
+else:
+    if not "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
+        raise ValueError("you have to define wasserstein regularizer.")
+
+if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
+    if cfg_auto_encoder["encoder"]["sigma"]["n_dim_out"] == 1:
+        warnings.warn("diagonal covariance is recommended. ARE YOU OK?")

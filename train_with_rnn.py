@@ -38,7 +38,7 @@ from model.noise_layer import GMMSampler
 from distribution.mixture import MultiVariateGaussianMixture
 from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
 ## loss functions
-from model.loss import EmpiricalSlicedWassersteinDistance
+from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
 from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
@@ -68,7 +68,9 @@ def _parse_args():
     return args
 
 
-def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_wd, loss_reg_kldiv, lst_seq, lst_seq_len,
+def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
+                   loss_reg_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
+                   loss_reg_kldiv, lst_seq, lst_seq_len,
                    device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_phase: str) -> Dict[str, float]:
 
     if train_mode:
@@ -83,14 +85,14 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         ## omit last `<eos>` symbol from the input sequence
         ## x_in = [[i,have,a,pen],[he,like,mary],...]; x_in_len = [4,3,...]
         ## x_out = [[i,have,a,pen,<eos>],[he,like,mary,<eos>],...]; x_out_len = [5,4,...]
-        ## encoder input
+        ## 1. encoder input
         x_in = []
         for seq_len, seq in zip(lst_seq_len, lst_seq):
             seq_b = deepcopy(seq)
             del seq_b[seq_len-1]
             x_in.append(seq_b)
         x_in_len = [seq_len - 1 for seq_len in lst_seq_len]
-        ## decoder output
+        ## 2. decoder output
         x_out = lst_seq
         x_out_len = lst_seq_len
 
@@ -103,11 +105,6 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         v_x_out = torch.tensor(x_out, dtype=torch.long).to(device=device)
         v_x_out_len = torch.tensor(x_out_len, dtype=torch.long).to(device=device)
 
-        ## empirical prior distribution
-        n_sample = len(x_in) * cfg_auto_encoder["sampler"]["n_sample"]
-        v_z_prior = prior_distribution.random(size=n_sample)
-        v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
-
         ## uniform distribution over $\alpha$
         lst_arr_unif = [np.full(n, 1./n, dtype=np.float32) for n in x_in_len]
         arr_unif = utils.pad_numpy_sequence(lst_arr_unif)
@@ -118,10 +115,26 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
             model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len, decoder_max_step=max(x_out_len))
 
         # regularization losses(sample-wise mean)
-        ## empirical sliced wasserstein distance
-        v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
-        reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior_v, target=v_z_prior)
-        ## kullback-leibler divergence on \alpha
+        ## 1. wasserstein distance between posterior and prior
+        if isinstance(loss_reg_wd, EmpiricalSlicedWassersteinDistance):
+            ## 1) empirical sliced wasserstein distance
+            n_sample = len(x_in) * cfg_auto_encoder["sampler"]["n_sample"]
+            v_z_prior = prior_distribution.random(size=n_sample)
+            v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
+            v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
+            reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior_v, target=v_z_prior)
+        elif isinstance(loss_reg_wd, GMMSinkhornWassersteinDistance):
+            ## 2) sinkhorn wasserstein distance
+            v_alpha_prior = torch.tensor(prior_distribution._alpha, dtype=torch.float32, requires_grad=False).to(device=device)
+            v_mu_prior = torch.tensor(prior_distribution._mu, dtype=torch.float32, requires_grad=False).to(device=device)
+            mat_sigma_prior = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])
+            v_sigma_prior = torch.tensor(mat_sigma_prior, dtype=torch.float32, requires_grad=False).to(device=device)
+            reg_loss_wd = loss_reg_wd.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
+                                              vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
+        else:
+            raise NotImplementedError(f"unsupported regularization layer: {type(loss_reg_wd)}")
+
+        ## 2. (optional) kullback-leibler divergence on \alpha
         reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
         if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
             reg_loss = reg_loss_wd + reg_loss_kldiv
@@ -155,7 +168,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst, loss_reg_
         "max_alpha":float(torch.max(v_alpha)),
         "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
-        "eswd":float(reg_loss_wd),
+        "wd":float(reg_loss_wd),
         "reg_alpha":float(reg_loss_kldiv),
         "nll":nll,
         "nll_token":nll_token,
@@ -228,8 +241,16 @@ def main():
     n_dim_gmm = cfg_auto_encoder["prior"]["n_dim"]
     n_prior_gmm_component = cfg_auto_encoder["prior"]["n_gmm_component"]
 
+    ## regularizer type
+    regularizer_name = next(iter(cfg_auto_encoder["loss"]["reg"]))
+    print(f"regularizer type: {regularizer_name}")
+    is_sliced_wasserstein = regularizer_name.find("sliced_wasserstein") != -1
+
     # calculate l2 norm and stdev of the mean and stdev of prior distribution
-    l2_norm, std = calculate_prior_dist_params(expected_swd=cfg_auto_encoder["prior"]["expected_swd"], n_dim_latent=n_dim_gmm)
+    l2_norm, std = calculate_prior_dist_params(expected_wd=cfg_auto_encoder["prior"]["expected_wd"], n_dim_latent=n_dim_gmm, sliced_wasserstein=is_sliced_wasserstein)
+    ## overwrite auto values with user-defined values
+    l2_norm = cfg_auto_encoder["prior"].get("l2_norm", l2_norm)
+    std = cfg_auto_encoder["prior"].get("std", std)
     print("prior distribution parameters.")
     print(f"\tl2_norm:{l2_norm:2.3f}, stdev:{std:2.3f}")
     vec_alpha = np.full(shape=n_prior_gmm_component, fill_value=1./n_prior_gmm_component)
@@ -263,7 +284,10 @@ def main():
     model.to(device=args.device)
 
     ## loss layers
-    loss_wasserstein = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["empirical_wasserstein"])
+    if is_sliced_wasserstein:
+        loss_wasserstein = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["empirical_sliced_wasserstein"])
+    else:
+        loss_wasserstein = GMMSinkhornWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["sinkhorn_wasserstein"])
     loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
