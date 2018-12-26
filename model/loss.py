@@ -311,16 +311,19 @@ class GMMSinkhornWassersteinDistance(_Loss):
         self._threshold = sinkhorn_threshold
         self._device = device
 
+
+    def _matrix_dist_l2_sq(self, mat_x: torch.Tensor, mat_y: torch.Tensor):
+        ret = torch.sum(mat_x**2, dim=-1, keepdim=True) \
+                   + torch.transpose(torch.sum(mat_y**2, dim=-1, keepdim=True),0,1) \
+                   - 2*torch.mm(mat_x, torch.transpose(mat_y,0,1))
+        return ret
+
     def _calculate_distance_matrix(self, v_mat_mu_x: torch.Tensor, v_mat_std_x: torch.Tensor, v_mat_mu_y: torch.Tensor, v_mat_std_y: torch.Tensor):
 
         # l2_sq_mu = (n_c_x, n_c_y)
-        l2_sq_mu = torch.sum(v_mat_mu_x**2, dim=-1, keepdim=True) \
-                   + torch.transpose(torch.sum(v_mat_mu_y**2, dim=-1, keepdim=True),0,1) \
-                   - 2*torch.mm(v_mat_mu_x, torch.transpose(v_mat_mu_y,0,1))
+        l2_sq_mu = self._matrix_dist_l2_sq(v_mat_mu_x, v_mat_mu_y)
         # tr_sigma = (n_c_x, n_c_y)
-        tr_sigma = torch.sum(v_mat_std_x**2, dim=-1, keepdim=True) \
-                   + torch.transpose(torch.sum(v_mat_std_y**2, dim=-1, keepdim=True),0,1,) \
-                   - 2*torch.mm(v_mat_std_x, torch.transpose(v_mat_std_y,0,1))
+        tr_sigma = self._matrix_dist_l2_sq(v_mat_std_x, v_mat_std_y)
 
         return l2_sq_mu + tr_sigma
 
@@ -360,15 +363,16 @@ class GMMSinkhornWassersteinDistance(_Loss):
         :return: square of approximate wasserstein distance * scale between two GMMs
         """
 
-        n_mb = len(lst_vec_alpha_x)
-        v_wd_sq = None
+        n_mb = 0
+        v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True)
         for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
             v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
             v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
-            if v_wd_sq is None:
-                v_wd_sq = v_wd_sq_b
-            else:
-                v_wd_sq = v_wd + v_wd_sq_b
-        v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
+            if not torch.isnan(v_wd_sq_b):
+                v_wd_sq = v_wd_sq + v_wd_sq_b
+                n_mb += 1
+
+        if n_mb > 0:
+            v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
 
         return v_wd_sq
