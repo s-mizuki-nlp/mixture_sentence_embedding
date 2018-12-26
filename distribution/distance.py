@@ -3,6 +3,7 @@
 
 import numpy as np
 from scipy.misc import logsumexp
+from scipy.linalg import sqrtm
 from sklearn.metrics.pairwise import euclidean_distances
 from typing import List, Tuple, Union, Iterator, Optional
 from .mixture import MultiVariateGaussianMixture
@@ -82,8 +83,8 @@ def _wasserstein_distance_sq_between_multivariate_normal(vec_mu_x: np.array, mat
     wasserstein distance between multivariate normal distributions
     """
     d_mu = np.sum((vec_mu_x - vec_mu_y) ** 2)
-    mat_cov_x_sqrt = np.sqrt(mat_cov_x)
-    d_cov = np.sum(np.diag(mat_cov_x + mat_cov_y - 2*np.sqrt(mat_cov_x_sqrt*mat_cov_y*mat_cov_x_sqrt)))
+    mat_std_x = sqrtm(mat_cov_x)
+    d_cov = np.sum(np.diag(mat_cov_x + mat_cov_y - 2*np.sqrt(mat_std_x*mat_cov_y*mat_std_x)))
 
     return d_mu + d_cov
 
@@ -93,7 +94,7 @@ def _wasserstein_distance_sq_between_multivariate_normal_diag(vec_mu_x: np.array
     wasserstein distance between multivariate normal distributions with diagonal covariance matrix
     """
     d_mu = np.sum((vec_mu_x - vec_mu_y)**2)
-    d_cov = np.sum(vec_std_x**2 + vec_std_y**2 - 2*vec_std_x*vec_std_y)
+    d_cov = np.sum((vec_std_x - vec_std_y)**2)
 
     return d_mu + d_cov
 
