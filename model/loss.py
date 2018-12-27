@@ -384,7 +384,7 @@ class GMMSinkhornWassersteinDistance(_Loss):
         """
 
         n_mb = 0
-        v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True)
+        v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True, device=self._device)
         for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
             v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
             v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
