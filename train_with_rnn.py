@@ -165,7 +165,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
     metrics = {
         "n_sentence":n_sentence,
         "n_token":n_token,
-        "max_alpha":float(torch.max(v_alpha)),
+        "mean_max_alpha":float(torch.mean(torch.max(v_alpha, dim=-1)[0])),
         "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
         "wd":float(reg_loss_wd),
@@ -405,16 +405,17 @@ def main():
         vec_n_token = np.array([m["n_token"] for m in lst_metrics])
         metrics["n_sentence"] = np.sum(vec_n_sentence)
         metrics["n_token"] = np.sum(vec_n_token)
+        metrics["n_token_per_sentence"] = metrics["n_token"] / metrics["n_sentence"]
         for metric_name in lst_metrics[0].keys():
             vec_values = np.array([np.nan if m[metric_name] is None else m[metric_name] for m in lst_metrics])
             if metric_name in ["n_sentence","n_token"]:
                 continue
-            elif metric_name == "max_alpha": # maximum over all sentence
-                metrics["mean_max_alpha"] = np.mean(vec_values)
+            elif metric_name.startswith("mean_"): # sentence-wise mean
+                metrics[metric_name] = np.sum(vec_n_sentence * vec_values) / np.sum(vec_n_sentence)
             elif metric_name == "nll_token": # token-wise mean
                 metrics[metric_name] = np.sum(vec_n_token * vec_values) / np.sum(vec_n_token)
-            else: # sentence-wise mean
-                metrics[metric_name] = np.sum(vec_n_sentence * vec_values) / np.sum(vec_n_sentence)
+            else: # token-wise mean * average sentence length
+                metrics[metric_name] = np.sum(vec_n_sentence * vec_values) * metrics["n_token_per_sentence"] / metrics["n_token"]
 
         f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
         sep = "\t"
