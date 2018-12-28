@@ -22,12 +22,14 @@ class SimpleGlobalAttention(nn.Module):
         self._dim_query = n_dim_query
         self._dim_key = n_dim_memory
 
-    def forward(self, source: Tensor, memory_bank: Tensor) -> (Tensor, Tensor):
+    def forward(self, source: Tensor, memory_bank: Tensor, mask: Optional[torch.Tensor] = None) -> (Tensor, Tensor):
         """
+        simple self attention layer that has query transformation layer
 
         :param source: 2-D tensor (N_batch, N_dim_query). typically, output of RNN(=lstm, gru) state: (N_batch, N_dim_state)
-        :param memory_bank: set of context vector: (N_batch, N_context, N_dim_key)
-        :return:
+        :param memory_bank: set of context vector: (N_batch, N_context, N_dim_memory)
+        :param mask: binary mask indicating which keys should have non-zero attention. `(N_batch, N_context)`
+        :return: 2-D context tensor (N_batch, N_dim_memory)
         """
         # v_q = (N_batch, N_dim_query)
         v_q = source
@@ -47,6 +49,11 @@ class SimpleGlobalAttention(nn.Module):
         # v_score = (N_batch, N_context, 1)
         v_score = torch.bmm(h_t, h_s)
 
+        if mask is not None:
+            # mask: (N_mb, N_context) -> (N_mb, N_context, 1)
+            mask = mask.unsqueeze(2)
+            v_score = v_score.masked_fill(mask, -1e18)
+
         # v_attn = (N_batch, N_context, 1)
         v_attn = F.softmax(v_score, dim=1)
 
@@ -61,12 +68,12 @@ class SimpleGlobalAttention(nn.Module):
 class MultiHeadedAttention(nn.Module):
     """
     simple Multi-Head Attention module that is similar to "Attention is All You Need".
-    Also includes several additional tricks.
+
     Args:
        n_head (int): number of parallel heads
        n_dim_query (int): the dimension of queries
        n_dim_memory (int): the dimension of keys/values
-       n_dim_out (int): the dimension of output: concatenation of the output of each heads. it must be divisible by _n_head
+       n_dim_out (int): the dimension of output: concatenation of the output of each heads. it must be divisible by n_head
        dropout (float): _dropout parameter
        transform_memory_bank (bool): allow transformation of keys/values or not.
     """
