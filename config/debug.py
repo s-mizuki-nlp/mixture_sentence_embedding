@@ -60,6 +60,13 @@ cfg_auto_encoder = {
             "simple_attention":{
                 "n_dim_query":n_dim_lstm_hidden*2,
                 "n_dim_memory":n_dim_latent
+            },
+            "multi_head_attention":{
+                "n_dim_query":n_dim_lstm_hidden*2,
+                "n_dim_memory":n_dim_latent,
+                "n_dim_out":n_dim_lstm_hidden,
+                "dropout":0.0,
+                "transform_memory_bank":False
             }
         }
     },
