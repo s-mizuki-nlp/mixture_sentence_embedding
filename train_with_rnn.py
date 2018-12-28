@@ -180,11 +180,13 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
     }
     if "kldiv_ana" in evaluation_metrics:
         metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-                                           prior_distribution=prior_distribution, method="analytical")
+                                               prior_distribution=prior_distribution, method="analytical") \
+                                               * cfg_auto_encoder["sampler"]["n_sample"]
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_ana"]
     if "kldiv_mc" in evaluation_metrics:
         metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-                                           prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000)
+                                              prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000) \
+                                              * cfg_auto_encoder["sampler"]["n_sample"]
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
 
     return metrics
