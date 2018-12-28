@@ -49,9 +49,19 @@ cfg_auto_encoder = {
         }
     },
     "decoder": {
-        "n_dim_lstm_hidden":n_dim_lstm_hidden,
-        "n_dim_memory":n_dim_latent,
-        "custom_attention_layer":None
+        "lstm":{
+            "n_dim_lstm_hidden":n_dim_lstm_hidden,
+            "n_dim_lstm_input":n_dim_latent
+        },
+        "latent":{
+            # you can choose one of these latent representation decoders:
+            # 1) simple attention
+            # 2) multi-head attention (not implemented yet)
+            "simple_attention":{
+                "n_dim_query":n_dim_lstm_hidden*2,
+                "n_dim_memory":n_dim_latent
+            }
+        }
     },
     "predictor": {
         "n_dim_in":n_dim_lstm_hidden
@@ -88,8 +98,8 @@ cfg_auto_encoder = {
         "n_dim":n_dim_latent,
         "expected_wd":2.0,
         # if you want, you can manually specify l2 norm and standard deviation
-        # "l2_norm": 2.0,
-        # "std": 1.0
+        "l2_norm": 1.0,
+        "std": 0.1
     }
 }
 
@@ -114,7 +124,7 @@ cfg_corpus = {
         "size":100,
         "min_seq_len":None,
         "max_seq_len":None,
-        "evaluation_metrics":["kldiv_ana"]
+        "evaluation_metrics":["kldiv_ana","kldiv_mc"]
     },
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"
@@ -152,3 +162,9 @@ else:
 if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
     if cfg_auto_encoder["encoder"]["sigma"]["n_dim_out"] == 1:
         warnings.warn("diagonal covariance is recommended. ARE YOU OK?")
+
+if "simple_attention" in cfg_auto_encoder["decoder"]["latent"]:
+    cfg_attn = cfg_auto_encoder["decoder"]["latent"]["simple_attention"]
+    cfg_lstm = cfg_auto_encoder["decoder"]["lstm"]
+    assert cfg_attn["n_dim_query"] == cfg_lstm["n_dim_lstm_hidden"] * 2, "query size must be the double of hidden state."
+    assert cfg_attn["n_dim_memory"] == cfg_lstm["n_dim_lstm_input"], "you can't change memory dimension size using simple_attention."

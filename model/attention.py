@@ -10,14 +10,14 @@ import torch.nn.functional as F
 
 class SimpleGlobalAttention(nn.Module):
 
-    def __init__(self, dim_query: int, dim_key: int):
+    def __init__(self, n_dim_query: int, n_dim_memory: int):
 
         super(__class__, self).__init__()
 
-        self._transform_query = nn.Linear(in_features=dim_query, out_features=dim_key, bias=False)
+        self._transform_query = nn.Linear(in_features=n_dim_query, out_features=n_dim_memory, bias=False)
 
-        self._dim_query = dim_query
-        self._dim_key = dim_key
+        self._dim_query = n_dim_query
+        self._dim_key = n_dim_memory
 
     def forward(self, source: Tensor, memory_bank: Tensor) -> (Tensor, Tensor):
         """

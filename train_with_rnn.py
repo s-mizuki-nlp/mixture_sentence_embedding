@@ -29,6 +29,7 @@ from preprocess import utils
 from model.multi_layer import MultiDenseLayer
 from model.encoder import GMMLSTMEncoder
 # decoder
+from model.attention import  SimpleGlobalAttention
 from model.decoder import SelfAttentiveLSTMDecoder
 from model.decoder import SimplePredictor
 # regularizers
@@ -275,7 +276,14 @@ def main():
     sampler = GMMSampler(device=args.device, **cfg_auto_encoder["sampler"])
 
     ## decoder
-    decoder = SelfAttentiveLSTMDecoder(device=args.device, **cfg_auto_encoder["decoder"])
+    latent_decoder_name = next(iter(cfg_auto_encoder["decoder"]["latent"]))
+    if latent_decoder_name == "simple_attention":
+        latent_decoder = SimpleGlobalAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
+    elif latent_decoder_name == "multi_head_attention":
+        raise NotImplementedError(f"not implemented yet:{latent_decoder_name}")
+    else:
+        raise NotImplementedError(f"unsupported latent decoder:{latent_decoder_name}")
+    decoder = SelfAttentiveLSTMDecoder(latent_decoder=latent_decoder, device=args.device, **cfg_auto_encoder["decoder"]["lstm"])
     ## prediction layer
     predictor = SimplePredictor(n_dim_out=dictionary.max_id+1, log=True, **cfg_auto_encoder["predictor"])
 

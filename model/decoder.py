@@ -11,22 +11,16 @@ from .attention import SimpleGlobalAttention
 
 class SelfAttentiveLSTMDecoder(nn.Module):
 
-    def __init__(self, n_dim_lstm_hidden: int, n_dim_memory: int,
-                 custom_attention_layer: Optional[SimpleGlobalAttention] = None,
+    def __init__(self, n_dim_lstm_hidden: int, n_dim_lstm_input: int,
+                 latent_decoder: SimpleGlobalAttention,
                  device=torch.device("cpu")):
 
         super(__class__, self).__init__()
 
         self._n_dim_lstm_hidden = n_dim_lstm_hidden
-        self._n_dim_memory = n_dim_memory
-
-        if custom_attention_layer is not None:
-            self._attention_layer = custom_attention_layer
-        else:
-            n_dim_query = n_dim_lstm_hidden * 2
-            self._attention_layer = SimpleGlobalAttention(dim_query=n_dim_query, dim_key=n_dim_memory)
-
-        self._lstm_cell = nn.LSTMCell(input_size=n_dim_memory, hidden_size=n_dim_lstm_hidden)
+        self._n_dim_lstm_input = n_dim_lstm_input
+        self._attention_layer = latent_decoder
+        self._lstm_cell = nn.LSTMCell(input_size=n_dim_lstm_input, hidden_size=n_dim_lstm_hidden)
         self._device = device
 
     def _init_state(self, size: int):
@@ -36,7 +30,7 @@ class SelfAttentiveLSTMDecoder(nn.Module):
 
     @property
     def n_dim_memory(self):
-        return self._n_dim_memory
+        return self._n_dim_lstm_input
 
     def forward(self, z_latent: torch.Tensor, n_step: int) -> torch.Tensor:
         """
