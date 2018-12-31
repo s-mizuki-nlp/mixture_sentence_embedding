@@ -8,7 +8,7 @@ import torch.optim
 
 highway = False
 bidirectional = True
-n_dim_latent = 16
+n_dim_latent = 8
 n_dim_lstm_hidden = 16
 n_dim_embedding = 16
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
@@ -51,17 +51,18 @@ cfg_auto_encoder = {
     "decoder": {
         "lstm":{
             "n_dim_lstm_hidden":n_dim_lstm_hidden,
-            "n_dim_lstm_input":n_dim_latent
+            "n_dim_lstm_input":n_dim_lstm_hidden
         },
         "latent":{
             # you can choose one of these latent representation decoders:
             # 1) simple attention
             # 2) multi-head attention (not implemented yet)
-            "simple_attention":{
-                "n_dim_query":n_dim_lstm_hidden*2,
-                "n_dim_memory":n_dim_latent
-            },
+            # "simple_attention":{
+            #     "n_dim_query":n_dim_lstm_hidden*2,
+            #     "n_dim_memory":n_dim_latent
+            # },
             "multi_head_attention":{
+                "n_head":2,
                 "n_dim_query":n_dim_lstm_hidden*2,
                 "n_dim_memory":n_dim_latent,
                 "n_dim_out":n_dim_lstm_hidden,
@@ -175,3 +176,11 @@ if "simple_attention" in cfg_auto_encoder["decoder"]["latent"]:
     cfg_lstm = cfg_auto_encoder["decoder"]["lstm"]
     assert cfg_attn["n_dim_query"] == cfg_lstm["n_dim_lstm_hidden"] * 2, "query size must be the double of hidden state."
     assert cfg_attn["n_dim_memory"] == cfg_lstm["n_dim_lstm_input"], "you can't change memory dimension size using simple_attention."
+
+if "multi_head_attention" in cfg_auto_encoder["decoder"]["latent"]:
+    cfg_attn = cfg_auto_encoder["decoder"]["latent"]["multi_head_attention"]
+    cfg_lstm = cfg_auto_encoder["decoder"]["lstm"]
+    if not cfg_attn["transform_memory_bank"]:
+        assert cfg_attn["n_dim_memory"] == n_dim_latent, "memory bank must be same size as latent dimension."
+    assert cfg_attn["n_dim_query"] == cfg_lstm["n_dim_lstm_hidden"] * 2, "query size must be the double of hidden state."
+    assert cfg_attn["n_dim_out"] == cfg_lstm["n_dim_lstm_input"], "output of the attention layer must be same size as input of the lstm layer."
