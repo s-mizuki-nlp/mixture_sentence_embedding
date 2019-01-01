@@ -29,7 +29,7 @@ from preprocess import utils
 from model.multi_layer import MultiDenseLayer
 from model.encoder import GMMLSTMEncoder
 # decoder
-from model.attention import  SimpleGlobalAttention, MultiHeadedAttention
+from model.attention import  SimpleGlobalAttention, MultiHeadedAttention, PassTuru
 from model.decoder import SelfAttentiveLSTMDecoder
 from model.decoder import SimplePredictor
 # regularizers
@@ -283,6 +283,8 @@ def main():
         latent_decoder = SimpleGlobalAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
     elif latent_decoder_name == "multi_head_attention":
         latent_decoder = MultiHeadedAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
+    elif latent_decoder_name == "pass_turu":
+        latent_decoder = PassTuru(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
     else:
         raise NotImplementedError(f"unsupported latent decoder:{latent_decoder_name}")
     decoder = SelfAttentiveLSTMDecoder(latent_decoder=latent_decoder, device=args.device, **cfg_auto_encoder["decoder"]["lstm"])

@@ -43,6 +43,9 @@ def calculate_prior_dist_params(expected_wd: float, n_dim_latent: int, sliced_wa
 def calculate_mean_l2_between_sample(t_z_posterior: np.ndarray):
     
     n_mb, n_latent, n_dim = t_z_posterior.shape
+    if n_latent == 1:
+        return 0.
+
     idx_triu = np.triu_indices(n=n_latent, k=1)
     l2_dist = 0.
     for b in range(n_mb):

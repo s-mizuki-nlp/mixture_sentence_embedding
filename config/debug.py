@@ -8,7 +8,7 @@ import torch.optim
 
 highway = False
 bidirectional = True
-n_dim_latent = 8
+n_dim_latent = 16
 n_dim_lstm_hidden = 16
 n_dim_embedding = 16
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
@@ -56,26 +56,29 @@ cfg_auto_encoder = {
         "latent":{
             # you can choose one of these latent representation decoders:
             # 1) simple attention
-            # 2) multi-head attention (not implemented yet)
+            # 2) multi-head attention
+            # 3) pass through(=do nothing)
             # "simple_attention":{
             #     "n_dim_query":n_dim_lstm_hidden*2,
             #     "n_dim_memory":n_dim_latent
             # },
-            "multi_head_attention":{
-                "n_head":2,
-                "n_dim_query":n_dim_lstm_hidden*2,
-                "n_dim_memory":n_dim_latent,
-                "n_dim_out":n_dim_lstm_hidden,
-                "dropout":0.0,
-                "transform_memory_bank":False
-            }
+            "pass_turu":{ # no arguments
+            },
+            # "multi_head_attention":{
+            #     "n_head":2,
+            #     "n_dim_query":n_dim_lstm_hidden*2,
+            #     "n_dim_memory":n_dim_latent,
+            #     "n_dim_out":n_dim_lstm_hidden,
+            #     "dropout":0.0,
+            #     "transform_memory_bank":False
+            # }
         }
     },
     "predictor": {
         "n_dim_in":n_dim_lstm_hidden
     },
     "sampler": {
-        "n_sample":n_gmm_component,
+        "n_sample":1,
         "param_tau":0.1,
         "expect_log_alpha":True,
         "enable_gumbel_softmax_trick":True
@@ -183,4 +186,9 @@ if "multi_head_attention" in cfg_auto_encoder["decoder"]["latent"]:
     if not cfg_attn["transform_memory_bank"]:
         assert cfg_attn["n_dim_memory"] == n_dim_latent, "memory bank must be same size as latent dimension."
     assert cfg_attn["n_dim_query"] == cfg_lstm["n_dim_lstm_hidden"] * 2, "query size must be the double of hidden state."
-    assert cfg_attn["n_dim_out"] == cfg_lstm["n_dim_lstm_input"], "output of the attention layer must be same size as input of the lstm layer."
+    assert cfg_attn["n_dim_out"] == cfg_lstm["n_dim_lstm_input"], "output of the attention layer must be same size as input of the lstm decoder layer."
+
+if "pass_turu" in cfg_auto_encoder["decoder"]["latent"]:
+    cfg_lstm = cfg_auto_encoder["decoder"]["lstm"]
+    assert cfg_auto_encoder["sampler"]["n_sample"] == 1, "if you choose pass-turu as latent decoder, `n_sample` must be one."
+    assert n_dim_latent == cfg_lstm["n_dim_lstm_input"], "input of the lstm decoder must be same size as latent dimension."

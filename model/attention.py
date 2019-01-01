@@ -11,6 +11,24 @@ from torch import Tensor
 import torch.nn.functional as F
 import numpy as np
 
+class PassTuru(nn.Module):
+
+    def __init__(self, **kwargs):
+        super(__class__, self).__init__()
+
+    def forward(self, source: Tensor, memory_bank: Tensor, mask: Optional[torch.Tensor] = None) -> (Tensor, None):
+        """
+        pass-through layer; do nothing.
+        :param source: unused
+        :param memory_bank: set of context vector: (N_batch, 1, N_dim_memory); N_context must be one.
+        :param mask: binary mask indicating which keys should have non-zero attention. `(N_batch, N_context)`
+        :return: 2-D context tensor (N_batch, N_dim_memory)
+        """
+        v_context = memory_bank.squeeze(dim=1)
+        assert v_context.dim() == 2, "context tensor must be 2-D."
+
+        return v_context, None
+
 class SimpleGlobalAttention(nn.Module):
 
     def __init__(self, n_dim_query: int, n_dim_memory: int):
