@@ -99,7 +99,8 @@ cfg_auto_encoder = {
                 "sinkhorn_lambda":0.1,
                 "sinkhorn_iter_max":100,
                 "sinkhorn_threshold":0.1,
-                "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=1E+6)
+                "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=2E+6),
+                "marginalize_posterior":False
             }
         },
         "kldiv": {
