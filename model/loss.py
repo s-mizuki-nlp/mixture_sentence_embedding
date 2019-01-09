@@ -332,11 +332,14 @@ class GMMSlicedWassersteinDistance_Parallel(GMMSlicedWassersteinDistance):
 
 class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
-    def __init__(self, scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
+    def __init__(self, marginalize_posterior: bool,
+                 scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1,
+                 size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
         """
         approximated wasserstein distance between two gaussian mixtures using sinkhorn algorithm.
 
-        :param scale: scale parameter. output will be scale * distance
+        :param marginalize_posterior: marginalize out posterior distribution(=E_x[p(z|x]) or not
+        :param scale: scale parameter. output will be scale * wasserstein distance
         :param sinkhorn_lambda: smoothing parameter of sinkhorn algorithm. it will be multiplied to distance matrix.
         :param sinkhorn_iter_max: maximum number of iterations of sinkhorn algorithm.
         :param sinkhorn_threshold: threshold that is used to detect convergence of sinkhorn algorithm.
@@ -347,6 +350,7 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
         super(GMMSinkhornWassersteinDistance, self).__init__(scale, size_average, reduce, reduction)
 
+        self._marginalize_posterior = marginalize_posterior
         self._lambda = sinkhorn_lambda
         self._n_iter_max = sinkhorn_iter_max
         self._threshold = sinkhorn_threshold
@@ -398,27 +402,48 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
         return dist, mat_gamma
 
+    def _marginalize_gaussian_mixture(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
+
+        n_mb = len(lst_vec_alpha)
+        # \alpha: (\sum{N_component})
+        vec_alpha = torch.cat(lst_vec_alpha) / n_mb
+        # \mu: (\sum{N_component}, N_dim)
+        mat_mu = torch.cat(lst_mat_mu, dim=0)
+        # \sigma: (\sum{N_component}, N_dim) or (\sum{N_component}, 1)
+        mat_std = torch.cat(lst_mat_std, dim=0)
+
+        return vec_alpha, mat_mu, mat_std
+
     def forward(self, lst_vec_alpha_x: List[torch.Tensor], lst_mat_mu_x: List[torch.Tensor], lst_mat_std_x: List[torch.Tensor],
                 vec_alpha_y: torch.Tensor, mat_mu_y: torch.Tensor, mat_std_y: torch.Tensor):
         """
-        sample `n_sample` random samples from gaussian mixture using both gumbel-softmax trick and re-parametrization trick.
+        calculate approximated wasserstein distance between posterior gaussian mixtures and prior gaussian mixture using sinkhorn algorithm.
 
-        :param lst_vec_alpha: list of the packed scale vectors.
-        :param lst_mat_mu: list of the sequence of packed mean vectors
-        :param lst_mat_std: list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
-        :return: square of approximate wasserstein distance * scale between two GMMs
+        :param lst_vec_alpha_x: posterior. list of the packed scale vectors.
+        :param lst_mat_mu_x: posterior. list of the sequence of packed mean vectors
+        :param lst_mat_std_x: posterior. list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
+        :return: mean of the square of approximate 2-wasserstein distance * scale parameter
         """
 
-        n_mb = 0
-        v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True, device=self._device)
-        for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
-            v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
-            v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
-            if not torch.isnan(v_wd_sq_b):
-                v_wd_sq = v_wd_sq + v_wd_sq_b
-                n_mb += 1
+        if self._marginalize_posterior:
+            vec_alpha_x, mat_mu_x, mat_std_x = self._marginalize_gaussian_mixture(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x)
+            v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=mat_mu_x, v_mat_std_x=mat_std_x, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
+            v_wd_sq, mat_gamma = self._sinkhorn_algorithm(vec_p=vec_alpha_x, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
+            v_wd_sq = v_wd_sq * self._scale
 
-        if n_mb > 0:
-            v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
+            return v_wd_sq
 
-        return v_wd_sq
+        else:
+            n_mb = 0
+            v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True, device=self._device)
+            for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
+                v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
+                v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
+                if not torch.isnan(v_wd_sq_b):
+                    v_wd_sq = v_wd_sq + v_wd_sq_b
+                    n_mb += 1
+
+            if n_mb > 0:
+                v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
+
+            return v_wd_sq
