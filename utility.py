@@ -66,6 +66,7 @@ def _tensor_to_array(t: Union[np.ndarray, torch.Tensor]):
     else:
         raise AttributeError(f"unsupported type: {type(t)}")
 
+
 def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu: List[Union[np.ndarray, torch.Tensor]],
                     lst_v_sigma: List[Union[np.ndarray, torch.Tensor]],
                     prior_distribution: MultiVariateGaussianMixture,
@@ -94,3 +95,22 @@ def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu
     kldiv /= n_mb
 
     return kldiv
+
+
+def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):
+    """
+    it returns scale*sigmoid(coef*(x-offset)) = scale / (1. + exp(-coef*(x-offset)))
+    returned value range will be [min_value, scale]
+    """
+
+    _s = scale
+    _c = coef
+    _o = offset
+    _m = min_value
+
+    def sigmoid(x: Union[int, float]):
+        ret = _s / (1. + np.exp(-_c*(x - _o)))
+        ret = min(max(_m, ret), _s)
+        return ret
+
+    return sigmoid

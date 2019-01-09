@@ -40,6 +40,7 @@ from distribution.mixture import MultiVariateGaussianMixture
 from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
+from model.loss import BaseAnnealableLoss
 from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
@@ -70,8 +71,8 @@ def _parse_args():
 
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
-                   loss_reg_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
-                   loss_reg_kldiv, lst_seq, lst_seq_len,
+                   loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
+                   loss_layer_kldiv, lst_seq, lst_seq_len,
                    device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
 
     if train_mode:
@@ -117,26 +118,26 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
 
         # regularization losses(sample-wise mean)
         ## 1. wasserstein distance between posterior and prior
-        if isinstance(loss_reg_wd, EmpiricalSlicedWassersteinDistance):
+        if isinstance(loss_layer_wd, EmpiricalSlicedWassersteinDistance):
             ## 1) empirical sliced wasserstein distance
             n_sample = len(x_in) * cfg_auto_encoder["sampler"]["n_sample"]
             v_z_prior = prior_distribution.random(size=n_sample)
             v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
             v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
-            reg_loss_wd = loss_reg_wd.forward(input=v_z_posterior_v, target=v_z_prior)
-        elif isinstance(loss_reg_wd, GMMSinkhornWassersteinDistance):
+            reg_loss_wd = loss_layer_wd.forward(input=v_z_posterior_v, target=v_z_prior)
+        elif isinstance(loss_layer_wd, GMMSinkhornWassersteinDistance):
             ## 2) sinkhorn wasserstein distance
             v_alpha_prior = torch.tensor(prior_distribution._alpha, dtype=torch.float32, requires_grad=False).to(device=device)
             v_mu_prior = torch.tensor(prior_distribution._mu, dtype=torch.float32, requires_grad=False).to(device=device)
             mat_sigma_prior = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])
             v_sigma_prior = torch.tensor(mat_sigma_prior, dtype=torch.float32, requires_grad=False).to(device=device)
-            reg_loss_wd = loss_reg_wd.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
-                                              vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
+            reg_loss_wd = loss_layer_wd.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
+                                                vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
         else:
-            raise NotImplementedError(f"unsupported regularization layer: {type(loss_reg_wd)}")
+            raise NotImplementedError(f"unsupported regularization layer: {type(loss_layer_wd)}")
 
         ## 2. (optional) kullback-leibler divergence on \alpha
-        reg_loss_kldiv = loss_reg_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
+        reg_loss_kldiv = loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
         if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
             reg_loss = reg_loss_wd + reg_loss_kldiv
         else:
@@ -170,6 +171,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
         "mean_l2_dist":float(mean_l2_dist),
         "mean_sigma":float(mean_sigma),
         "wd":float(reg_loss_wd),
+        "wd_scale":loss_layer_wd.scale,
         "reg_alpha":float(reg_loss_kldiv),
         "nll":nll,
         "nll_token":nll_token,
@@ -299,11 +301,14 @@ def main():
     model.to(device=args.device)
 
     ## loss layers
+    ### wasserstein distance: d(p(z|x), q(z))
     if is_sliced_wasserstein:
         loss_wasserstein = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["empirical_sliced_wasserstein"])
     else:
         loss_wasserstein = GMMSinkhornWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["sinkhorn_wasserstein"])
+    ### kullback-leibler divergence: KL(p(\alpha|x), q(\alpha))
     loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
+    ### negtive log likelihood: -lnp(x|z); z~p(z|x)
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
     # optimizer
@@ -328,6 +333,10 @@ def main():
         ## iterate over mini-batch
         for train, _ in dict_data_feeder[phase]:
             n_iteration += 1
+
+            # update scale parameter of wasserstein distance layer
+            loss_wasserstein.update_scale_parameter(n_processed=n_processed)
+
             # training
             if cfg_optimizer["validation_interval"] is not None:
                 train_mode = not(n_iteration % cfg_optimizer["validation_interval"] == 0)
@@ -336,7 +345,7 @@ def main():
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
-                                           loss_reconst=loss_reconst, loss_reg_wd=loss_wasserstein, loss_reg_kldiv=loss_kldiv,
+                                           loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
@@ -398,7 +407,7 @@ def main():
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
-                                           loss_reconst=loss_reconst, loss_reg_wd=loss_wasserstein, loss_reg_kldiv=loss_kldiv,
+                                           loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,

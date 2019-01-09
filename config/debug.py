@@ -6,6 +6,8 @@ import warnings
 import torch
 import torch.optim
 
+from utility import sigmoid_generator
+
 highway = False
 bidirectional = True
 n_dim_latent = 16
@@ -96,7 +98,7 @@ cfg_auto_encoder = {
                 "sinkhorn_lambda":0.1,
                 "sinkhorn_iter_max":100,
                 "sinkhorn_threshold":0.1,
-                "scale":1.0
+                "scale":sigmoid_generator(scale=1.0, coef=0.001, offset=1000)
             }
         },
         "kldiv": {
