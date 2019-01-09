@@ -4,7 +4,7 @@
 import sys, io, os
 import numpy as np
 from pathos import multiprocessing
-from typing import List, Tuple, Union, Iterator
+from typing import List, Tuple, Union, Iterator, Callable
 import torch
 from torch.nn.modules.loss import _Loss
 from torch.nn import functional as F
@@ -13,6 +13,38 @@ __ROOT_DIR = os.path.join( os.path.dirname(__file__), "../")
 sys.path.append(__ROOT_DIR)
 
 from distribution.mixture import MultiVariateGaussianMixture, UniVariateGaussianMixture
+
+
+class BaseAnnealableLoss(_Loss):
+
+    def __init__(self, scale: Union[int, float, Callable[[int], float]], size_average=None, reduce=None, reduction='samplewise_mean'):
+
+        super(BaseAnnealableLoss, self).__init__(size_average, reduce, reduction)
+
+        self._scale_func = scale
+        self.update_scale_parameter(n_processed=0)
+
+    @property
+    def scale(self):
+        return self._scale
+
+    @scale.setter
+    def scale(self, value):
+        self._scale = value
+
+    def update_scale_parameter(self, n_processed: int):
+        """
+
+        :param n_processed: number of processed sentences so far.
+        :return: scale value
+        """
+        if isinstance(self._scale_func, (int, float)):
+            self._scale = self._scale_func
+        elif isinstance(self._scale_func, Callable):
+            self._scale = self._scale_func(n_processed)
+        else:
+            raise NotImplementedError("unsupported scale parameter type. it must be numeric or callable that returns numeric value.")
+
 
 class PaddedNLLLoss(_Loss):
 
@@ -86,7 +118,7 @@ class MaskedKLDivLoss(_Loss):
         return loss
 
 
-class EmpiricalSlicedWassersteinDistance(_Loss):
+class EmpiricalSlicedWassersteinDistance(BaseAnnealableLoss):
 
     def __init__(self, n_slice, scale=1.0, size_average=None, reduce=None, reduction='elementwise_mean', device=torch.device("cpu")):
         """
@@ -96,15 +128,10 @@ class EmpiricalSlicedWassersteinDistance(_Loss):
         :param scale: scale parameter. output will be scale * distance
         :param reduction: it must be `elementwise_mean`
         """
-        super(EmpiricalSlicedWassersteinDistance, self).__init__(size_average, reduce, reduction)
+        super(EmpiricalSlicedWassersteinDistance, self).__init__(scale, size_average, reduce, reduction)
 
         self._n_slice = n_slice
-        self._scale = scale
         self._device = device
-
-    @property
-    def scale(self):
-        return self._scale
 
     def _sample_circular(self, n_dim, size=None, requires_grad=False):
         if size is None:
@@ -303,7 +330,7 @@ class GMMSlicedWassersteinDistance_Parallel(GMMSlicedWassersteinDistance):
         return obj_ret
 
 
-class GMMSinkhornWassersteinDistance(_Loss):
+class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
     def __init__(self, scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1, size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
         """
@@ -318,9 +345,8 @@ class GMMSinkhornWassersteinDistance(_Loss):
 
         assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
 
-        super(GMMSinkhornWassersteinDistance, self).__init__(size_average, reduce, reduction)
+        super(GMMSinkhornWassersteinDistance, self).__init__(scale, size_average, reduce, reduction)
 
-        self._scale = scale
         self._lambda = sinkhorn_lambda
         self._n_iter_max = sinkhorn_iter_max
         self._threshold = sinkhorn_threshold
