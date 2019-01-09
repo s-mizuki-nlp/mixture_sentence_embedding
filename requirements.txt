@@ -1,4 +1,6 @@
 torch==0.4.1
+scikit-learn
+regex
 numpy
 pandas
 gensim

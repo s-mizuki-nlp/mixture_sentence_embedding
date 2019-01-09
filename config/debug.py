@@ -127,6 +127,8 @@ if _hostname == "Ubuntu-Precision-Tower-3420":
     dataset_dir = "/home/sakae/Windows/dataset/"
 elif _hostname == "iris":
     dataset_dir = "/home/sakae/dataset/"
+elif _hostname == "login0":
+    dataset_dir = "/home/4/18D30111/dataset/"
 elif re_tsubame_node.match(string=_hostname):
     dataset_dir = "/home/4/18D30111/dataset/"
 else:
