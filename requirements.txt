@@ -1,4 +1,4 @@
-pytorch==0.4.1
+torch==0.4.1
 numpy
 pandas
 gensim
@@ -6,4 +6,4 @@ more_itertools
 progressbar2
 pathos
 matplotlib
--e git+https://github.com/OpenNMT/OpenNMT-py.git
+# -e git+https://github.com/OpenNMT/OpenNMT-py.git#egg=opennmt-0.7.0
