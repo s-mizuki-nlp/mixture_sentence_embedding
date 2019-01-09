@@ -40,7 +40,6 @@ from distribution.mixture import MultiVariateGaussianMixture
 from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
-from model.loss import BaseAnnealableLoss
 from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
@@ -126,7 +125,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
             v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
             reg_loss_wd = loss_layer_wd.forward(input=v_z_posterior_v, target=v_z_prior)
         elif isinstance(loss_layer_wd, GMMSinkhornWassersteinDistance):
-            ## 2) sinkhorn wasserstein distance
+            ## 2) (marginalized) sinkhorn wasserstein distance
             v_alpha_prior = torch.tensor(prior_distribution._alpha, dtype=torch.float32, requires_grad=False).to(device=device)
             v_mu_prior = torch.tensor(prior_distribution._mu, dtype=torch.float32, requires_grad=False).to(device=device)
             mat_sigma_prior = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])

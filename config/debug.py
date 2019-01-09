@@ -93,12 +93,15 @@ cfg_auto_encoder = {
             #     "n_slice":10,
             #     "scale":1.
             # },
-            # 2) sinkhorn wasserstein distance: d(p(z|x),q(z))
+            # 2) sinkhorn wasserstein distance
+            ## standard version: E_x[d(p(z|x),q(z))]
+            ## marginalized version: d(E_x[p(z|x)],q(z))
             "sinkhorn_wasserstein": {
                 "sinkhorn_lambda":0.1,
                 "sinkhorn_iter_max":100,
                 "sinkhorn_threshold":0.1,
-                "scale":sigmoid_generator(scale=1.0, coef=0.001, offset=1000)
+                "scale":1.0,
+                "marginalize_posterior":True
             }
         },
         "kldiv": {
