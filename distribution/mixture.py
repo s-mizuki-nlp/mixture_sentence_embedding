@@ -35,7 +35,7 @@ class MultiVariateGaussianMixture(object):
                  tensor_cov: Optional[tensor] = None, mat_cov: Optional[matrix] = None, vec_std: Optional[vector] = None):
         self._n_k = len(vec_alpha)
         self._n_dim = mat_mu.shape[1]
-        self._alpha = np.minimum(1.0, np.maximum(self.__EPS, vec_alpha))
+        self._alpha = np.minimum(1.0 - self.__EPS, np.maximum(self.__EPS, vec_alpha))
         self._ln_alpha = np.log(self._alpha)
         self._mu = mat_mu
         if tensor_cov is not None:
