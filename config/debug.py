@@ -146,7 +146,7 @@ cfg_corpus = {
         "size":100,
         "min_seq_len":None,
         "max_seq_len":None,
-        "evaluation_metrics":["kldiv_ana","kldiv_mc"]
+        "evaluation_metrics":{"kldiv_ana":1, "kldiv_mc":2}
     },
     "dictionary":os.path.join(dataset_dir, "wikipedia_en/vocab_wordpiece.dic"),
     "log_file_path":f"log_train_progress_{__name__}.log"

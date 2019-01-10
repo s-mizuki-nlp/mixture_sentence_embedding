@@ -46,6 +46,7 @@ from model.loss import PaddedNLLLoss
 from model.vae import VariationalAutoEncoder
 ## used for evaluation
 from utility import calculate_kldiv
+from utility import enumerate_optional_metrics
 
 def _parse_args():
 
@@ -342,6 +343,7 @@ def main():
             else:
                 train_mode = True
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
+            lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
                                            loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
@@ -350,7 +352,8 @@ def main():
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
                                            cfg_optimizer=cfg_optimizer,
-                                           evaluation_metrics=cfg_corpus[phase].get("evaluation_metrics",[]))
+                                           evaluation_metrics=lst_eval_metrics
+                                           )
             n_processed += len(lst_seq_len)
             n_progress += len(lst_seq_len)
 
@@ -404,6 +407,7 @@ def main():
         for batch, _ in dict_data_feeder[phase]:
             train_mode = False
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
+            lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
                                            loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
@@ -412,7 +416,8 @@ def main():
                                            train_mode=train_mode,
                                            cfg_auto_encoder=cfg_auto_encoder,
                                            cfg_optimizer=cfg_optimizer,
-                                           evaluation_metrics=cfg_corpus[phase].get("evaluation_metrics",[]))
+                                           evaluation_metrics=lst_eval_metrics
+                                           )
             lst_metrics.append(metrics_batch)
 
         # logging and reporting

@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 from typing import List, Union, Optional, Dict
+import copy
 import torch
 import numpy as np
 from scipy.stats import norm
@@ -114,3 +115,17 @@ def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):
         return ret
 
     return sigmoid
+
+
+def enumerate_optional_metrics(cfg_metrics: Union[List[str], Dict[str,int]], n_epoch):
+
+    if isinstance(cfg_metrics, list):
+        return copy.deepcopy(cfg_metrics)
+    elif isinstance(cfg_metrics, dict):
+        lst_ret = []
+        for metric, n_interval in cfg_metrics.items():
+            if n_epoch % n_interval == 0:
+                lst_ret.append(metric)
+        return lst_ret
+    else:
+        raise NotImplementedError("unsupported metrics configuration detected:", cfg_metrics)
