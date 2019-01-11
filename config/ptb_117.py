@@ -5,6 +5,7 @@ import sys,io,os
 import warnings
 import torch
 import torch.optim
+import regex
 
 from utility import sigmoid_generator
 
@@ -99,7 +100,8 @@ cfg_auto_encoder = {
                 "sinkhorn_lambda":0.1,
                 "sinkhorn_iter_max":100,
                 "sinkhorn_threshold":0.1,
-                "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=1E+6)
+                "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=1E+6),
+                "marginalize_posterior":False
             }
         },
         "kldiv": {
@@ -118,11 +120,16 @@ cfg_auto_encoder = {
 }
 
 ## corpus location
+re_tsubame_node = regex.compile(pattern=r"r[0-9]i[0-9]n[0-9]")
 _hostname = os.uname()[1]
 if _hostname == "Ubuntu-Precision-Tower-3420":
     dataset_dir = "/home/sakae/Windows/dataset/"
 elif _hostname == "iris":
     dataset_dir = "/home/sakae/dataset/"
+elif _hostname == "login0":
+    dataset_dir = "/home/4/18D30111/dataset/"
+elif re_tsubame_node.match(string=_hostname):
+    dataset_dir = "/home/4/18D30111/dataset/"
 else:
     raise NotImplementedError(f"unknown environment:{_hostname}")
 print(f"dataset directory:{dataset_dir}")
