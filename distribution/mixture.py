@@ -224,7 +224,9 @@ class MultiVariateGaussianMixture(object):
         :param shuffle: randomly permute generated samples(DEFAULT:True)
         :return: generated samples
         """
-        vec_r_k = np.random.multinomial(n=size, pvals=self._alpha)
+        # fix: normalize again to deal with numerical error
+        vec_alpha = self._alpha / np.sum(self._alpha)
+        vec_r_k = np.random.multinomial(n=size, pvals=vec_alpha)
         mat_r_x = np.vstack([np.random.multivariate_normal(mean=self._mu[k], cov=self._cov[k], size=size_k, check_valid="ignore") for k, size_k in enumerate(vec_r_k)])
         if shuffle:
             np.random.shuffle(mat_r_x)
