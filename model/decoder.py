@@ -13,15 +13,26 @@ class SelfAttentiveLSTMDecoder(nn.Module):
 
     def __init__(self, n_dim_lstm_hidden: int, n_dim_lstm_input: int,
                  latent_decoder: SimpleGlobalAttention,
+                 n_lstm_layer: int = 1,
                  device=torch.device("cpu")):
 
         super(__class__, self).__init__()
 
         self._n_dim_lstm_hidden = n_dim_lstm_hidden
         self._n_dim_lstm_input = n_dim_lstm_input
+        self._n_lstm_layer = n_lstm_layer
         self._attention_layer = latent_decoder
-        self._lstm_cell = nn.LSTMCell(input_size=n_dim_lstm_input, hidden_size=n_dim_lstm_hidden)
         self._device = device
+
+        # instanciate lstm cell
+        self._lst_lstm_cell = []
+        for k in range(n_lstm_layer):
+            if k == 0:
+                self._lst_lstm_cell.append(nn.LSTMCell(input_size=n_dim_lstm_input, hidden_size=n_dim_lstm_hidden))
+            else:
+                self._lst_lstm_cell.append(nn.LSTMCell(input_size=n_dim_lstm_hidden, hidden_size=n_dim_lstm_hidden))
+        self._lstm_layers = nn.ModuleList(self._lst_lstm_cell)
+
 
     def _init_state(self, size: int):
         h_0 = torch.zeros(size, self._n_dim_lstm_hidden, device=self._device)
@@ -42,19 +53,29 @@ class SelfAttentiveLSTMDecoder(nn.Module):
         :return tensor of output state. shape = (N_batch, N_step, N_dim_lstm_hidden)
         """
         n_batch = z_latent.shape[0]
-        h_t, c_t = self._init_state(size=n_batch)
-        lst_h_t = []
+        lst_h_t = [None]*n_step
 
-        # calculate each step
-        for t in range(n_step):
-            # state vector
-            v_t = torch.cat((h_t,c_t), dim=-1)
-            # calculate context vector using attention layer with state vector as query
-            x_dec_t, x_dec_t_attn = self._attention_layer.forward(source=v_t, memory_bank=z_latent)
-            # calculate next step
-            h_t, c_t = self._lstm_cell(x_dec_t, (h_t, c_t))
-            # store output state vector
-            lst_h_t.append(h_t)
+        # calculate each layers
+        for k, lstm_cell_k in enumerate(self._lstm_layers):
+            # initialie internal state tensors
+            h_t, c_t = self._init_state(size=n_batch)
+
+            # calculate each steps
+            for t in range(n_step):
+
+                if k == 0:
+                    # re-use internal states as the query
+                    q_t = torch.cat((h_t,c_t), dim=-1)
+                    # calculate context vector using attention layer with internal states as query
+                    x_dec_t, x_dec_t_attn = self._attention_layer.forward(source=q_t, memory_bank=z_latent)
+                else:
+                    # just retrieve output of the previous layer
+                    x_dec_t = lst_h_t[t]
+                # calculate next step
+                h_t, c_t = lstm_cell_k(x_dec_t, (h_t, c_t))
+
+                # store output state vector: h_t
+                lst_h_t[t] = h_t
 
         # stack it
         t_dec_h = torch.stack(lst_h_t, dim=1)

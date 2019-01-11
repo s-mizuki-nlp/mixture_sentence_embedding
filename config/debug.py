@@ -54,7 +54,8 @@ cfg_auto_encoder = {
     "decoder": {
         "lstm":{
             "n_dim_lstm_hidden":n_dim_lstm_hidden,
-            "n_dim_lstm_input":n_dim_lstm_hidden
+            "n_dim_lstm_input":n_dim_lstm_hidden,
+            "n_lstm_layer":2
         },
         "latent":{
             # you can choose one of these latent representation decoders:
