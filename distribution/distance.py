@@ -159,7 +159,10 @@ def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariat
     vec_x = p_x.random(size=n_sample)
     vec_x_ln_p = p_x.logpdf(vec_x)
     vec_y_ln_p = p_y.logpdf(vec_x)
-    vec_w = np.exp(vec_x_ln_p - logsumexp(vec_x_ln_p))
-    kldiv = np.sum( vec_w * (vec_x_ln_p - vec_y_ln_p) )
+    # original version
+    kldiv = np.mean(vec_x_ln_p - vec_y_ln_p)
+    # weight-adjusted version
+    # vec_w = np.exp(vec_x_ln_p - logsumexp(vec_x_ln_p))
+    # kldiv = np.sum( vec_w * (vec_x_ln_p - vec_y_ln_p) )
 
     return kldiv
