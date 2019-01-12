@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+from collections import OrderedDict
 from typing import List, Dict, Union, Any, Optional
 from copy import deepcopy
 from contextlib import ExitStack
@@ -11,6 +12,9 @@ import numpy as np
 import torch
 from torch import nn
 
+# encoders
+from model.multi_layer import MultiDenseLayer
+from model.encoder import GMMLSTMEncoder
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
 from utility import calculate_mean_l2_between_sample
@@ -93,16 +97,17 @@ class Estimator(object):
             v_x_out = torch.tensor(x_out, dtype=torch.long, device=self._device)
             v_x_out_len = torch.tensor(x_out_len, dtype=torch.long, device=self._device)
 
-            # forward computation of the VAE model
-            v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y, lst_v_alpha, lst_v_mu, lst_v_sigma = \
-                self._model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len, decoder_max_step=max(x_out_len))
-
             # if you just want posterior distributions, forward pass will end here.
             if inference_mode:
+                lst_v_alpha, lst_v_mu, lst_v_sigma = self._model.infer(x_seq=v_x_in, x_seq_len=v_x_in_len)
                 lst_v_alpha = self._detach_computation_graph(lst_v_alpha)
                 lst_v_mu = self._detach_computation_graph(lst_v_mu)
                 lst_v_sigma = self._detach_computation_graph(lst_v_sigma)
                 return lst_v_alpha, lst_v_mu, lst_v_sigma
+
+            # forward computation of the VAE model
+            v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y, lst_v_alpha, lst_v_mu, lst_v_sigma = \
+                self._model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len, decoder_max_step=max(x_out_len))
 
             # regularization losses(sample-wise mean)
             ## 1. wasserstein distance between posterior and prior
@@ -247,9 +252,48 @@ class Estimator(object):
         # tup_lst_params = lst_v_alpha, lst_v_mu, lst_v_sigma
         tup_lst_params = \
                 self._forward(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=None, prior_distribution=None,
-                              train_mode=False, inference_mode=False, clip_gradient=None)
+                              train_mode=False, inference_mode=True, clip_gradient=None)
 
         if not return_numpy:
             return tup_lst_params
         else:
             return tuple(self._to_numpy(lst_tensor=lst_params) for lst_params in tup_lst_params)
+
+
+    @classmethod
+    def load_encoder_from_file(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, path_state_dict: str, device):
+        # instanciate variational autoencoder
+        cfg_encoder = cfg_auto_encoder["encoder"]
+        ## MLP for \alpha, \mu, \sigma
+        for param_name in "alpha,mu,sigma".split(","):
+            cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
+        ## encoder
+        encoder = GMMLSTMEncoder(n_vocab=n_vocab, device=device, **cfg_encoder["lstm"])
+        encoder = cls._load_encoder_params(encoder=encoder, path_model_state_dict=path_state_dict, device=device)
+
+        model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
+
+        obj = cls(model=model, loss_reconst=None, loss_layer_wd=None, loss_layer_kldiv=None, device=device)
+
+        return obj
+
+
+    @classmethod
+    def _load_encoder_params(cls, encoder: nn.Module, path_model_state_dict: str, device):
+
+        encoder_layer_name = "_encoder."
+
+        if device.type == "cpu":
+            state_dict=torch.load(path_model_state_dict, map_location="cpu")
+        else:
+            state_dict=torch.load(path_model_state_dict)
+
+        state_dict_e = OrderedDict()
+        for layer_name, params in state_dict.items():
+            if layer_name.startswith(encoder_layer_name):
+                layer_name_e = layer_name.replace(encoder_layer_name, "")
+                state_dict_e[layer_name_e] = params
+
+        encoder.load_state_dict(state_dict=state_dict_e)
+
+        return encoder
