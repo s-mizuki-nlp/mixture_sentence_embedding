@@ -82,3 +82,19 @@ class VariationalAutoEncoder(nn.Module):
 
         # return everything
         return v_alpha, v_mu, v_sigma, v_z, v_ln_prob_y, lst_alpha, lst_mu, lst_sigma
+
+
+    def infer(self, x_seq: torch.Tensor, x_seq_len: torch.Tensor):
+
+        # encoder: Sequence to padded GMM parameters {\alpha, \mu, \sigma}
+        if self._encoder._return_state:
+            v_alpha, v_ln_alpha, v_mu, v_sigma, (h_n, c_n) = self._encoder.forward(x_seq, x_seq_len)
+        else:
+            v_alpha, v_ln_alpha, v_mu, v_sigma = self._encoder.forward(x_seq, x_seq_len)
+
+        # pack padded sequence while keeping torch.tensor object
+        lst_alpha = utils.pack_padded_sequence(v_alpha, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        lst_mu = utils.pack_padded_sequence(v_mu, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+        lst_sigma = utils.pack_padded_sequence(v_sigma, lst_seq_len=x_seq_len, dim=0, keep_torch_tensor=True)
+
+        return lst_alpha, lst_mu, lst_sigma
