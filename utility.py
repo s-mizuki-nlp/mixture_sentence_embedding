@@ -25,7 +25,7 @@ def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float
 
     if n_vector == 1:
         warnings.warn("single vector was requested. it will return zero vector.")
-        mat_ret = np.zeros((1, n_dim), dtype=np.float32)
+        mat_ret = np.zeros((1, n_dim), dtype=np.float64)
     else:
         if n_vector <= n_dim:
             warnings.warn("multiple vectors were requested. it will return orthogonal vector set with specified norm.")
