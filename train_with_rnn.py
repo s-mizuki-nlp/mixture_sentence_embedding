@@ -72,8 +72,8 @@ def _parse_args():
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
                    loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
-                   loss_layer_kldiv: MaskedKLDivLoss, lst_seq, lst_seq_len,
-                   device, train_mode, enable_reg_loss_kldiv_alpha, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
+                   loss_layer_kldiv: Optional[MaskedKLDivLoss], lst_seq, lst_seq_len,
+                   device, train_mode, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
 
     if train_mode:
         optimizer.zero_grad()
@@ -137,11 +137,13 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
             raise NotImplementedError(f"unsupported regularization layer: {type(loss_layer_wd)}")
 
         ## 2. (optional) kullback-leibler divergence on \alpha
-        reg_loss_kldiv = loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
-        if enable_reg_loss_kldiv_alpha:
+        if loss_layer_kldiv is not None:
+            reg_loss_kldiv = loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
             reg_loss = reg_loss_wd + reg_loss_kldiv
+            reg_alpha = float(reg_loss_kldiv)
         else:
             reg_loss = reg_loss_wd
+            reg_alpha = np.nan
 
         # reconstruction loss(sample-wise mean)
         reconst_loss = loss_reconst.forward(y_ln_prob=v_ln_prob_y, y_true=v_x_out, y_len=x_out_len)
@@ -172,7 +174,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
         "mean_sigma":float(mean_sigma),
         "wd":float(reg_loss_wd),
         "wd_scale":loss_layer_wd.scale,
-        "reg_alpha":float(reg_loss_kldiv),
+        "reg_alpha":reg_alpha,
         "nll":nll,
         "nll_token":nll_token,
         "total_cost":float(reconst_loss) + float(reg_loss_wd),
@@ -307,7 +309,10 @@ def main():
     else:
         loss_wasserstein = GMMSinkhornWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["sinkhorn_wasserstein"])
     ### kullback-leibler divergence: KL(p(\alpha|x), q(\alpha))
-    loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
+    if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
+        loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
+    else:
+        loss_kldiv = None
     ### negtive log likelihood: -lnp(x|z); z~p(z|x)
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
@@ -327,6 +332,7 @@ def main():
         print(f"phase:{phase}")
         logger = dict_logger[phase]
         cfg_corpus_t = cfg_corpus[phase]
+        lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
         q = progressbar.ProgressBar(max_value=cfg_corpus_t["size"])
         n_progress = 0
         q.update(n_progress)
@@ -343,14 +349,12 @@ def main():
             else:
                 train_mode = True
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
-            lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
                                            loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
-                                           enable_reg_loss_kldiv_alpha=cfg_auto_encoder["loss"]["kldiv"]["enabled"],
                                            cfg_optimizer=cfg_optimizer,
                                            evaluation_metrics=lst_eval_metrics
                                            )
@@ -402,19 +406,18 @@ def main():
         phase = "test"
         print(f"phase:{phase}")
         logger = dict_logger[phase]
+        lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
         lst_metrics = []
         ## iterate over mini-batch
         for batch, _ in dict_data_feeder[phase]:
             train_mode = False
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
-            lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
             metrics_batch = main_minibatch(model=model, optimizer=optimizer,
                                            prior_distribution=prior_distribution,
                                            loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
-                                           enable_reg_loss_kldiv_alpha=False,
                                            cfg_optimizer=cfg_optimizer,
                                            evaluation_metrics=lst_eval_metrics
                                            )
