@@ -6,7 +6,7 @@ from copy import deepcopy
 import argparse
 from contextlib import ExitStack
 import importlib
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Optional
 
 import numpy as np
 import progressbar
@@ -72,8 +72,8 @@ def _parse_args():
 
 def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
                    loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
-                   loss_layer_kldiv, lst_seq, lst_seq_len,
-                   device, train_mode, cfg_auto_encoder, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
+                   loss_layer_kldiv: MaskedKLDivLoss, lst_seq, lst_seq_len,
+                   device, train_mode, enable_reg_loss_kldiv_alpha, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
 
     if train_mode:
         optimizer.zero_grad()
@@ -120,10 +120,10 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
         ## 1. wasserstein distance between posterior and prior
         if isinstance(loss_layer_wd, EmpiricalSlicedWassersteinDistance):
             ## 1) empirical sliced wasserstein distance
-            n_sample = len(x_in) * cfg_auto_encoder["sampler"]["n_sample"]
+            n_sample = len(x_in) * model.sampler_size
             v_z_prior = prior_distribution.random(size=n_sample)
             v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
-            v_z_posterior_v = v_z_posterior.view((-1, cfg_auto_encoder["prior"]["n_dim"]))
+            v_z_posterior_v = v_z_posterior.view((-1, prior_distribution.n_dim))
             reg_loss_wd = loss_layer_wd.forward(input=v_z_posterior_v, target=v_z_prior)
         elif isinstance(loss_layer_wd, GMMSinkhornWassersteinDistance):
             ## 2) (marginalized) sinkhorn wasserstein distance
@@ -138,7 +138,7 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
 
         ## 2. (optional) kullback-leibler divergence on \alpha
         reg_loss_kldiv = loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
-        if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
+        if enable_reg_loss_kldiv_alpha:
             reg_loss = reg_loss_wd + reg_loss_kldiv
         else:
             reg_loss = reg_loss_wd
@@ -183,12 +183,12 @@ def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLL
     if "kldiv_ana" in evaluation_metrics:
         metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
                                                prior_distribution=prior_distribution, method="analytical") \
-                                               * cfg_auto_encoder["sampler"]["n_sample"]
+                                               * model.sampler_size
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_ana"]
     if "kldiv_mc" in evaluation_metrics:
         metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
                                               prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000) \
-                                              * cfg_auto_encoder["sampler"]["n_sample"]
+                                              * model.sampler_size
         metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
 
     return metrics
@@ -350,7 +350,7 @@ def main():
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
-                                           cfg_auto_encoder=cfg_auto_encoder,
+                                           enable_reg_loss_kldiv_alpha=cfg_auto_encoder["loss"]["kldiv"]["enabled"],
                                            cfg_optimizer=cfg_optimizer,
                                            evaluation_metrics=lst_eval_metrics
                                            )
@@ -414,7 +414,7 @@ def main():
                                            lst_seq=lst_seq, lst_seq_len=lst_seq_len,
                                            device=args.device,
                                            train_mode=train_mode,
-                                           cfg_auto_encoder=cfg_auto_encoder,
+                                           enable_reg_loss_kldiv_alpha=False,
                                            cfg_optimizer=cfg_optimizer,
                                            evaluation_metrics=lst_eval_metrics
                                            )
