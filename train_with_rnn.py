@@ -45,8 +45,11 @@ from model.loss import PaddedNLLLoss
 # variational autoencoder
 from model.vae import VariationalAutoEncoder
 ## used for evaluation
-from utility import calculate_kldiv
-from utility import enumerate_optional_metrics
+from utility import enumerate_optional_metrics, write_log_and_progress
+
+# estimator
+from train import Estimator
+
 
 def _parse_args():
 
@@ -68,132 +71,6 @@ def _parse_args():
     args.device = torch.device(args.device)
 
     return args
-
-
-def main_minibatch(model, optimizer, prior_distribution, loss_reconst: PaddedNLLLoss,
-                   loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
-                   loss_layer_kldiv: Optional[MaskedKLDivLoss], lst_seq, lst_seq_len,
-                   device, train_mode, cfg_optimizer, evaluation_metrics: List[str]) -> Dict[str, float]:
-
-    if train_mode:
-        optimizer.zero_grad()
-
-    with ExitStack() as context_stack:
-        # if not train mode, enter into no_grad() context
-        if not train_mode:
-            context_stack.enter_context(torch.no_grad())
-
-        # create encoder input and decoder output(=ground truth)
-        ## omit last `<eos>` symbol from the input sequence
-        ## x_in = [[i,have,a,pen],[he,like,mary],...]; x_in_len = [4,3,...]
-        ## x_out = [[i,have,a,pen,<eos>],[he,like,mary,<eos>],...]; x_out_len = [5,4,...]
-        ## 1. encoder input
-        x_in = []
-        for seq_len, seq in zip(lst_seq_len, lst_seq):
-            seq_b = deepcopy(seq)
-            del seq_b[seq_len-1]
-            x_in.append(seq_b)
-        x_in_len = [seq_len - 1 for seq_len in lst_seq_len]
-        ## 2. decoder output
-        x_out = lst_seq
-        x_out_len = lst_seq_len
-
-        # convert to torch.tensor
-        ## input
-        v_x_in = torch.tensor(x_in, dtype=torch.long).to(device=device)
-        v_x_in_len = torch.tensor(x_in_len, dtype=torch.long).to(device=device)
-        v_x_in_mask = (v_x_in > 0).float().to(device=device)
-        ## output
-        v_x_out = torch.tensor(x_out, dtype=torch.long).to(device=device)
-        v_x_out_len = torch.tensor(x_out_len, dtype=torch.long).to(device=device)
-
-        ## uniform distribution over $\alpha$
-        lst_arr_unif = [np.full(n, 1./n, dtype=np.float32) for n in x_in_len]
-        arr_unif = utils.pad_numpy_sequence(lst_arr_unif)
-        v_alpha_unif = torch.from_numpy(arr_unif).to(device=device)
-
-        # forward computation of the VAE model
-        v_alpha, v_mu, v_sigma, v_z_posterior, v_ln_prob_y, lst_v_alpha, lst_v_mu, lst_v_sigma = \
-            model.forward(x_seq=v_x_in, x_seq_len=v_x_in_len, decoder_max_step=max(x_out_len))
-
-        # regularization losses(sample-wise mean)
-        ## 1. wasserstein distance between posterior and prior
-        if isinstance(loss_layer_wd, EmpiricalSlicedWassersteinDistance):
-            ## 1) empirical sliced wasserstein distance
-            n_sample = len(x_in) * model.sampler_size
-            v_z_prior = prior_distribution.random(size=n_sample)
-            v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=device)
-            v_z_posterior_v = v_z_posterior.view((-1, prior_distribution.n_dim))
-            reg_loss_wd = loss_layer_wd.forward(input=v_z_posterior_v, target=v_z_prior)
-        elif isinstance(loss_layer_wd, GMMSinkhornWassersteinDistance):
-            ## 2) (marginalized) sinkhorn wasserstein distance
-            v_alpha_prior = torch.tensor(prior_distribution._alpha, dtype=torch.float32, requires_grad=False).to(device=device)
-            v_mu_prior = torch.tensor(prior_distribution._mu, dtype=torch.float32, requires_grad=False).to(device=device)
-            mat_sigma_prior = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])
-            v_sigma_prior = torch.tensor(mat_sigma_prior, dtype=torch.float32, requires_grad=False).to(device=device)
-            reg_loss_wd = loss_layer_wd.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
-                                                vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
-        else:
-            raise NotImplementedError(f"unsupported regularization layer: {type(loss_layer_wd)}")
-
-        ## 2. (optional) kullback-leibler divergence on \alpha
-        if loss_layer_kldiv is not None:
-            reg_loss_kldiv = loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
-            reg_loss = reg_loss_wd + reg_loss_kldiv
-            reg_alpha = float(reg_loss_kldiv)
-        else:
-            reg_loss = reg_loss_wd
-            reg_alpha = np.nan
-
-        # reconstruction loss(sample-wise mean)
-        reconst_loss = loss_reconst.forward(y_ln_prob=v_ln_prob_y, y_true=v_x_out, y_len=x_out_len)
-
-        # total loss
-        loss = reconst_loss + reg_loss
-
-    # update model parameters
-    if train_mode:
-        loss.backward()
-        if cfg_optimizer["gradient_clip"] is not None:
-            nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg_optimizer["gradient_clip"])
-        optimizer.step()
-
-    # compute metrics
-    n_sentence = len(x_out)
-    n_token = sum(x_out_len)
-    nll = float(reconst_loss)
-    nll_token = nll * n_sentence / n_token # lnq(x|z)*N_sentence/N_token
-    mat_sigma = v_sigma.cpu().data.numpy().flatten()
-    mean_sigma = np.mean(mat_sigma[mat_sigma > 0])
-    mean_l2_dist = calculate_mean_l2_between_sample(t_z_posterior=v_z_posterior.cpu().data.numpy())
-    metrics = {
-        "n_sentence":n_sentence,
-        "n_token":n_token,
-        "mean_max_alpha":float(torch.mean(torch.max(v_alpha, dim=-1)[0])),
-        "mean_l2_dist":float(mean_l2_dist),
-        "mean_sigma":float(mean_sigma),
-        "wd":float(reg_loss_wd),
-        "wd_scale":loss_layer_wd.scale,
-        "reg_alpha":reg_alpha,
-        "nll":nll,
-        "nll_token":nll_token,
-        "total_cost":float(reconst_loss) + float(reg_loss_wd),
-        "kldiv_ana":None,
-        "kldiv_mc":None,
-        "elbo":None
-    }
-    if "kldiv_ana" in evaluation_metrics:
-        metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-                                               prior_distribution=prior_distribution, method="analytical") \
-                                               * model.sampler_size
-        metrics["elbo"] = metrics["nll"] + metrics["kldiv_ana"]
-    if "kldiv_mc" in evaluation_metrics:
-        metrics["kldiv_mc"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-                                              prior_distribution=prior_distribution, method="monte_carlo", n_mc_sample=1000) \
-                                              * model.sampler_size
-        metrics["elbo"] = metrics["nll"] + metrics["kldiv_mc"]
-
-    return metrics
 
 
 def main():
@@ -316,7 +193,10 @@ def main():
     ### negtive log likelihood: -lnp(x|z); z~p(z|x)
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
-    # optimizer
+    ### instanciate estimator ###
+    estimator = Estimator(model=model, loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv, device=args.device)
+
+    # optimizer for variational autoencoder
     optimizer = cfg_optimizer["optimizer"](model.parameters(), lr=cfg_optimizer["lr"])
 
     # start training
@@ -341,7 +221,7 @@ def main():
             n_iteration += 1
 
             # update scale parameter of wasserstein distance layer
-            loss_wasserstein.update_scale_parameter(n_processed=n_processed)
+            estimator.reg_wasserstein.update_scale_parameter(n_processed=n_processed)
 
             # training
             if cfg_optimizer["validation_interval"] is not None:
@@ -349,44 +229,23 @@ def main():
             else:
                 train_mode = True
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=train)
-            metrics_batch = main_minibatch(model=model, optimizer=optimizer,
-                                           prior_distribution=prior_distribution,
-                                           loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
-                                           lst_seq=lst_seq, lst_seq_len=lst_seq_len,
-                                           device=args.device,
-                                           train_mode=train_mode,
-                                           cfg_optimizer=cfg_optimizer,
-                                           evaluation_metrics=lst_eval_metrics
-                                           )
+
+            metrics_batch = estimator.train_single_step(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=optimizer,
+                                                        prior_distribution=prior_distribution,
+                                                        clip_gradient_value=cfg_optimizer["gradient_clip"],
+                                                        evaluation_metrics=lst_eval_metrics)
+
             n_processed += len(lst_seq_len)
             n_progress += len(lst_seq_len)
 
             # logging and reporting
-            metrics = {
-                "epoch":n_epoch,
-                "processed":n_processed,
-                "mode":"train" if train_mode else "val"
-            }
-            metrics.update(metrics_batch)
-            f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
-            sep = "\t"
-            ## output log file
-            if n_iteration == 1:
-                s_header = sep.join(metrics.keys()) + "\n"
-                logger.write(s_header)
-            if args.log_validation_only and train_mode:
-                # validation metric only & training mode -> do not output metrics
-                pass
-            else:
-                s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
-                logger.write(s_record)
-            logger.flush()
-
-            ## output metrics
-            if args.verbose:
-                prefix = "train" if train_mode else "val"
-                s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )
-                print(s_print)
+            write_log_and_progress(n_epoch=n_epoch,n_processed=n_processed,
+                                   mode="train" if train_mode else "val",
+                                   dict_metrics=metrics_batch,
+                                   logger = logger,
+                                   output_log= not(args.log_validation_only) or not(train_mode),
+                                   output_std=args.verbose
+                                   )
 
             # next iteration
             q.update(n_progress)
@@ -407,35 +266,25 @@ def main():
         print(f"phase:{phase}")
         logger = dict_logger[phase]
         lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
-        lst_metrics = []
+        lst_metrics_batch = []
         ## iterate over mini-batch
         for batch, _ in dict_data_feeder[phase]:
-            train_mode = False
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
-            metrics_batch = main_minibatch(model=model, optimizer=optimizer,
-                                           prior_distribution=prior_distribution,
-                                           loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
-                                           lst_seq=lst_seq, lst_seq_len=lst_seq_len,
-                                           device=args.device,
-                                           train_mode=train_mode,
-                                           cfg_optimizer=cfg_optimizer,
-                                           evaluation_metrics=lst_eval_metrics
-                                           )
-            lst_metrics.append(metrics_batch)
 
-        # logging and reporting
-        metrics = {
-            "epoch":n_epoch,
-            "processed":n_processed,
-            "mode":"test"
-        }
-        vec_n_sentence = np.array([m["n_sentence"] for m in lst_metrics])
-        vec_n_token = np.array([m["n_token"] for m in lst_metrics])
+            metrics_batch = estimator.test_single_step(lst_seq=lst_seq, lst_seq_len=lst_seq_len,
+                                                       prior_distribution=prior_distribution,
+                                                       evaluation_metrics=lst_eval_metrics)
+            lst_metrics_batch.append(metrics_batch)
+
+        # calculate whole metrics
+        metrics = {}
+        vec_n_sentence = np.array([m["n_sentence"] for m in lst_metrics_batch])
+        vec_n_token = np.array([m["n_token"] for m in lst_metrics_batch])
         metrics["n_sentence"] = np.sum(vec_n_sentence)
         metrics["n_token"] = np.sum(vec_n_token)
         metrics["n_token_per_sentence"] = metrics["n_token"] / metrics["n_sentence"]
-        for metric_name in lst_metrics[0].keys():
-            vec_values = np.array([np.nan if m[metric_name] is None else m[metric_name] for m in lst_metrics])
+        for metric_name in lst_metrics_batch[0].keys():
+            vec_values = np.array([np.nan if m[metric_name] is None else m[metric_name] for m in lst_metrics_batch])
             if metric_name in ["n_sentence","n_token"]:
                 continue
             elif metric_name.startswith("mean_"): # sentence-wise mean
@@ -445,21 +294,9 @@ def main():
             else: # token-wise mean * average sentence length
                 metrics[metric_name] = np.sum(vec_n_sentence * vec_values) * metrics["n_token_per_sentence"] / metrics["n_token"]
 
-        f_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
-        sep = "\t"
-        ## output log file
-        if n_epoch == 0:
-            s_header = sep.join(metrics.keys()) + "\n"
-            logger.write(s_header)
-        s_record = sep.join( map(f_value_to_str, metrics.values()) ) + "\n"
-        logger.write(s_record)
-        logger.flush()
-
-        ## output metrics
-        if args.verbose:
-            prefix = "test"
-            s_print = ", ".join( [f"{prefix}_{k}:{f_value_to_str(v)}" for k,v in metrics.items()] )
-            print(s_print)
+        # logging and reporting
+        write_log_and_progress(n_epoch=n_epoch, n_processed=n_processed, mode="test", dict_metrics=metrics,
+                               logger=logger, output_log=True, output_std=True)
 
         ### proceed to next epoch ###
 

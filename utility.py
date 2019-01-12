@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+import io, os
 from typing import List, Union, Optional, Dict
 import warnings
 import copy
@@ -141,3 +142,33 @@ def enumerate_optional_metrics(cfg_metrics: Union[List[str], Dict[str,int]], n_e
         return lst_ret
     else:
         raise NotImplementedError("unsupported metrics configuration detected:", cfg_metrics)
+
+
+def write_log_and_progress(n_epoch, n_processed, mode: str, dict_metrics, logger: io.TextIOWrapper,
+                         output_log: bool, output_std: bool):
+
+    func_value_to_str = lambda v: f"{v:1.7f}" if isinstance(v,float) else f"{v}"
+
+    metrics = {
+        "epoch":n_epoch,
+        "processed":n_processed,
+        "mode":mode
+    }
+    metrics.update(dict_metrics)
+
+    if output_log:
+        sep = "\t"
+        ## output log file
+        if os.stat(logger.name).st_size == 0:
+            s_header = sep.join(metrics.keys()) + "\n"
+            logger.write(s_header)
+        else:
+            s_record = sep.join( map(func_value_to_str, metrics.values()) ) + "\n"
+            logger.write(s_record)
+        logger.flush()
+
+    ## output metrics
+    if output_std:
+        prefix = metrics["mode"]
+        s_print = ", ".join( [f"{prefix}_{k}:{func_value_to_str(v)}" for k,v in metrics.items()] )
+        print(s_print)
