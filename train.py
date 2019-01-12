@@ -11,19 +11,9 @@ import numpy as np
 import torch
 from torch import nn
 
-# encoders
-from model.multi_layer import MultiDenseLayer
-from model.encoder import GMMLSTMEncoder
-# decoder
-from model.attention import  SimpleGlobalAttention, MultiHeadedAttention, PassTuru
-from model.decoder import SelfAttentiveLSTMDecoder
-from model.decoder import SimplePredictor
-# regularizers
-## sampler
-from model.noise_layer import GMMSampler
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
-from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
+from utility import calculate_mean_l2_between_sample
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
 from model.loss import MaskedKLDivLoss
@@ -43,15 +33,21 @@ class Estimator(object):
                  loss_reconst: PaddedNLLLoss,
                  loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
                  loss_layer_kldiv: Optional[MaskedKLDivLoss],
-                 train_evaluation_metrics: List[str], test_evaluation_metrics: List[str],
                  device):
         self._model = model
         self._loss_reconst = loss_reconst
         self._loss_layer_wd = loss_layer_wd
         self._loss_layer_kldiv = loss_layer_kldiv
         self._device = device
-        self._eval_metrics_train = train_evaluation_metrics
-        self._test_metrics = test_evaluation_metrics
+
+    @property
+    def reg_wasserstein(self):
+        return self._loss_layer_wd
+
+    @property
+    def reg_kldiv(self):
+        return self._loss_layer_kldiv
+
 
     def _detach_computation_graph(self, lst_tensor: List[torch.Tensor]):
         return [tensor.detach() for tensor in lst_tensor]
@@ -199,7 +195,8 @@ class Estimator(object):
         return metrics
 
 
-    def train_single_step(self, lst_seq, lst_seq_len, optimizer, prior_distribution, clip_gradient_value: Optional[float] = None):
+    def train_single_step(self, lst_seq, lst_seq_len, optimizer, prior_distribution, clip_gradient_value: Optional[float] = None,
+                          evaluation_metrics: Optional[List[str]] = None):
 
         reconst_loss, reg_loss_wd, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
         self._forward(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=optimizer, prior_distribution=prior_distribution,
@@ -208,19 +205,23 @@ class Estimator(object):
 
         n_sentence = len(lst_seq)
         n_token = sum(lst_seq_len)
-        dict_metrics = self._compute_metrics_minibatch(
-            n_sentence=n_sentence, n_token=n_token,
-            reconst_loss=reconst_loss, reg_loss_wd=reg_loss_wd, reg_loss_kldiv=reg_loss_kldiv,
-            lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
-            v_z_posterior=v_z_posterior,
-            prior_distribution=prior_distribution,
-            evaluation_metrics=self._eval_metrics_train
-        )
+
+        if evaluation_metrics is not None:
+            dict_metrics = self._compute_metrics_minibatch(
+                n_sentence=n_sentence, n_token=n_token,
+                reconst_loss=reconst_loss, reg_loss_wd=reg_loss_wd, reg_loss_kldiv=reg_loss_kldiv,
+                lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
+                v_z_posterior=v_z_posterior,
+                prior_distribution=prior_distribution,
+                evaluation_metrics=evaluation_metrics
+            )
+        else:
+            dict_metrics = {}
 
         return dict_metrics
 
 
-    def evaluate_single_step(self, lst_seq, lst_seq_len, prior_distribution):
+    def test_single_step(self, lst_seq, lst_seq_len, prior_distribution, evaluation_metrics: [List[str]]):
 
         reconst_loss, reg_loss_wd, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
         self._forward(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=None, prior_distribution=prior_distribution,
@@ -228,13 +229,14 @@ class Estimator(object):
 
         n_sentence = len(lst_seq)
         n_token = sum(lst_seq_len)
+
         dict_metrics = self._compute_metrics_minibatch(
             n_sentence=n_sentence, n_token=n_token,
             reconst_loss=reconst_loss, reg_loss_wd=reg_loss_wd, reg_loss_kldiv=reg_loss_kldiv,
             lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
             v_z_posterior=v_z_posterior,
             prior_distribution=prior_distribution,
-            evaluation_metrics=self._eval_metrics_train
+            evaluation_metrics=evaluation_metrics
         )
 
         return dict_metrics
