@@ -6,6 +6,7 @@ import warnings
 import torch
 import torch.optim
 import regex
+import numpy as np
 
 from utility import sigmoid_generator
 
@@ -103,7 +104,8 @@ cfg_auto_encoder = {
                 "sinkhorn_iter_max":100,
                 "sinkhorn_threshold":0.1,
                 "scale":1.0,
-                "marginalize_posterior":True
+                "marginalize_posterior":False,
+                "weight_function_for_sequence_length":np.sqrt
             }
         },
         "kldiv": {

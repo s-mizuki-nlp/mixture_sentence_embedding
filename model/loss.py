@@ -4,7 +4,7 @@
 import sys, io, os
 import numpy as np
 from pathos import multiprocessing
-from typing import List, Tuple, Union, Iterator, Callable
+from typing import List, Tuple, Union, Iterator, Callable, Optional
 import torch
 from torch.nn.modules.loss import _Loss
 from torch.nn import functional as F
@@ -334,6 +334,7 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
     def __init__(self, marginalize_posterior: bool,
                  scale=1.0, sinkhorn_lambda=1.0, sinkhorn_iter_max=100, sinkhorn_threshold=0.1,
+                 weight_function_for_sequence_length: Optional[Callable] = None,
                  size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
         """
         approximated wasserstein distance between two gaussian mixtures using sinkhorn algorithm.
@@ -354,8 +355,17 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
         self._lambda = sinkhorn_lambda
         self._n_iter_max = sinkhorn_iter_max
         self._threshold = sinkhorn_threshold
+        self._weight_function = weight_function_for_sequence_length
         self._device = device
 
+    def _generate_weight(self, lst_seq_len: List[int]):
+        n_mb = len(lst_seq_len)
+        if self._weight_function is None:
+            return np.full(shape=n_mb, fill_value=1./n_mb)
+        else:
+            vec_w = np.array([self._weight_function(seq_len) for seq_len in lst_seq_len])
+            vec_w = vec_w / np.sum(vec_w)
+            return vec_w
 
     def _matrix_dist_l2_sq(self, mat_x: torch.Tensor, mat_y: torch.Tensor):
         ret = torch.sum(mat_x**2, dim=-1, keepdim=True) \
@@ -402,11 +412,12 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
         return dist, mat_gamma
 
-    def _marginalize_gaussian_mixture(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor]):
+    def _marginalize_gaussian_mixture(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor],
+                                      lst_weight: List[float]):
 
-        n_mb = len(lst_vec_alpha)
-        # \alpha: (\sum{N_component})
-        vec_alpha = torch.cat(lst_vec_alpha) / n_mb
+        # \alpha = \sum_{b}{w_b * \alpha_b}: (\sum{N_component})
+        lst_vec_alpha_w = [vec_alpha * w for vec_alpha, w in zip(lst_vec_alpha, lst_weight)]
+        vec_alpha = torch.cat(lst_vec_alpha_w)
         # \mu: (\sum{N_component}, N_dim)
         mat_mu = torch.cat(lst_mat_mu, dim=0)
         # \sigma: (\sum{N_component}, N_dim) or (\sum{N_component}, 1)
@@ -425,8 +436,11 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
         :return: mean of the square of approximate 2-wasserstein distance * scale parameter
         """
 
+        lst_seq_len = [len(vec_alpha) for vec_alpha in lst_vec_alpha_x]
+        lst_weight = self._generate_weight(lst_seq_len=lst_seq_len)
+
         if self._marginalize_posterior:
-            vec_alpha_x, mat_mu_x, mat_std_x = self._marginalize_gaussian_mixture(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x)
+            vec_alpha_x, mat_mu_x, mat_std_x = self._marginalize_gaussian_mixture(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x, lst_weight)
             v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=mat_mu_x, v_mat_std_x=mat_std_x, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
             v_wd_sq, mat_gamma = self._sinkhorn_algorithm(vec_p=vec_alpha_x, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
             v_wd_sq = v_wd_sq * self._scale
@@ -434,16 +448,16 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
             return v_wd_sq
 
         else:
-            n_mb = 0
+            weight_sum = 0
             v_wd_sq = torch.zeros(1, dtype=torch.float, requires_grad=True, device=self._device)
-            for v_alpha, v_mu, v_std in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x):
+            for v_alpha, v_mu, v_std, weight in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x, lst_weight):
                 v_mat_dist = self._calculate_distance_matrix(v_mat_mu_x=v_mu, v_mat_std_x=v_std, v_mat_mu_y=mat_mu_y, v_mat_std_y=mat_std_y)
                 v_wd_sq_b, mat_gamma = self._sinkhorn_algorithm(vec_p=v_alpha, vec_q=vec_alpha_y, mat_dist=v_mat_dist)
                 if not torch.isnan(v_wd_sq_b):
-                    v_wd_sq = v_wd_sq + v_wd_sq_b
-                    n_mb += 1
+                    v_wd_sq = v_wd_sq + v_wd_sq_b * weight
+                    weight_sum += weight
 
-            if n_mb > 0:
-                v_wd_sq = torch.div(v_wd_sq, n_mb) * self._scale
+            if weight_sum > 0:
+                v_wd_sq = torch.div(v_wd_sq, weight_sum) * self._scale
 
             return v_wd_sq
