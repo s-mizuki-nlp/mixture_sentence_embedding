@@ -169,9 +169,8 @@ def write_log_and_progress(n_epoch, n_processed, mode: str, dict_metrics, logger
         if os.stat(logger.name).st_size == 0:
             s_header = sep.join(metrics.keys()) + "\n"
             logger.write(s_header)
-        else:
-            s_record = sep.join( map(func_value_to_str, metrics.values()) ) + "\n"
-            logger.write(s_record)
+        s_record = sep.join( map(func_value_to_str, metrics.values()) ) + "\n"
+        logger.write(s_record)
         logger.flush()
 
     ## output metrics
