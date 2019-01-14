@@ -84,7 +84,8 @@ def _tensor_to_array(t: Union[np.ndarray, torch.Tensor]):
 def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu: List[Union[np.ndarray, torch.Tensor]],
                     lst_v_sigma: List[Union[np.ndarray, torch.Tensor]],
                     prior_distribution: MultiVariateGaussianMixture,
-                    method: str = "analytical", n_mc_sample: Optional[int] = None):
+                    method: str = "analytical", n_mc_sample: Optional[int] = None,
+                    return_list: bool = False):
     available_method = "analytical,monte_carlo"
     assert method in available_method.split(","), f"`method` must be one of these: {available_method}"
 
@@ -92,7 +93,7 @@ def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu
     iter_alpha = map(_tensor_to_array, lst_v_alpha)
     iter_mu = map(_tensor_to_array, lst_v_mu)
     iter_sigma = map(_tensor_to_array, lst_v_sigma)
-    kldiv = 0.0
+    kldiv = []
     for alpha, mu, sigma in zip(iter_alpha, iter_mu, iter_sigma):
         n_dim_sigma = sigma.shape[-1]
         if n_dim_sigma == 1: # istropic covariance matrix
@@ -104,11 +105,13 @@ def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu
             kldiv_b = approx_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution)
         else:
             kldiv_b = mc_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution, n_sample=n_mc_sample)
-        kldiv += kldiv_b
+        kldiv.append(kldiv_b)
 
-    kldiv /= n_mb
-
-    return kldiv
+    if return_list:
+        return kldiv
+    else:
+        ret = np.mean(kldiv)
+        return ret
 
 
 def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):
