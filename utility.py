@@ -28,17 +28,21 @@ def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float
         warnings.warn("single vector was requested. it will return zero vector.")
         mat_ret = np.zeros((1, n_dim), dtype=np.float64)
     else:
-        if n_vector <= n_dim:
-            warnings.warn("multiple vectors were requested. it will return orthogonal vector set with specified norm.")
-            np.random.seed(seed=0)
-            x = np.random.normal(size=n_dim * n_vector).reshape((n_dim, n_vector))
-            mat_u, _, _ = np.linalg.svd(x, full_matrices=False)
-            mat_ret = mat_u.T
+        if l2_norm == 0:
+            warnings.warn("vectors with zero length was requested. it will return zero vectors.")
+            mat_ret = np.zeros((n_vector, n_dim), dtype=np.float64)
         else:
-            warnings.warn("multiple vectors were requested. it will return random vector set with specified norm.")
-            mat_ret = np.random.normal(size=n_dim * n_vector).reshape((n_vector, n_dim))
+            if n_vector <= n_dim:
+                warnings.warn("multiple vectors were requested. it will return orthogonal vector set with specified norm.")
+                np.random.seed(seed=0)
+                x = np.random.normal(size=n_dim * n_vector).reshape((n_dim, n_vector))
+                mat_u, _, _ = np.linalg.svd(x, full_matrices=False)
+                mat_ret = mat_u.T
+            else:
+                warnings.warn("multiple vectors were requested. it will return random vector set with specified norm.")
+                mat_ret = np.random.normal(size=n_dim * n_vector).reshape((n_vector, n_dim))
 
-        mat_ret = mat_ret / np.linalg.norm(mat_ret, axis=1, keepdims=True) * l2_norm
+            mat_ret = mat_ret / np.linalg.norm(mat_ret, axis=1, keepdims=True) * l2_norm
 
     return mat_ret
 
