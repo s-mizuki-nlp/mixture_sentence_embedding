@@ -12,6 +12,9 @@ import numpy as np
 import torch
 from torch import nn
 
+from preprocess.dataset_feeder import GeneralSentenceFeeder
+from preprocess import utils
+
 # encoders
 from model.multi_layer import MultiDenseLayer
 from model.encoder import GMMLSTMEncoder
@@ -37,12 +40,14 @@ class Estimator(object):
                  loss_reconst: PaddedNLLLoss,
                  loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
                  loss_layer_kldiv: Optional[MaskedKLDivLoss],
-                 device):
+                 device,
+                 verbose: bool = False):
         self._model = model
         self._loss_reconst = loss_reconst
         self._loss_layer_wd = loss_layer_wd
         self._loss_layer_kldiv = loss_layer_kldiv
         self._device = device
+        self._verbose = verbose
 
     @property
     def reg_wasserstein(self):
@@ -52,6 +57,42 @@ class Estimator(object):
     def reg_kldiv(self):
         return self._loss_layer_kldiv
 
+    @classmethod
+    def load_encoder_from_file(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, path_state_dict: str, device):
+        # instanciate variational autoencoder
+        cfg_encoder = cfg_auto_encoder["encoder"]
+        ## MLP for \alpha, \mu, \sigma
+        for param_name in "alpha,mu,sigma".split(","):
+            cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
+        ## encoder
+        encoder = GMMLSTMEncoder(n_vocab=n_vocab, device=device, **cfg_encoder["lstm"])
+        encoder = cls._load_encoder_params(encoder=encoder, path_model_state_dict=path_state_dict, device=device)
+
+        model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
+
+        obj = cls(model=model, loss_reconst=None, loss_layer_wd=None, loss_layer_kldiv=None, device=device)
+
+        return obj
+
+    @classmethod
+    def _load_encoder_params(cls, encoder: nn.Module, path_model_state_dict: str, device):
+
+        encoder_layer_name = "_encoder."
+
+        if device.type == "cpu":
+            state_dict=torch.load(path_model_state_dict, map_location="cpu")
+        else:
+            state_dict=torch.load(path_model_state_dict)
+
+        state_dict_e = OrderedDict()
+        for layer_name, params in state_dict.items():
+            if layer_name.startswith(encoder_layer_name):
+                layer_name_e = layer_name.replace(encoder_layer_name, "")
+                state_dict_e[layer_name_e] = params
+
+        encoder.load_state_dict(state_dict=state_dict_e)
+
+        return encoder
 
     def _detach_computation_graph(self, lst_tensor: List[torch.Tensor]):
         return [tensor.detach() for tensor in lst_tensor]
@@ -259,41 +300,43 @@ class Estimator(object):
         else:
             return tuple(self._to_numpy(lst_tensor=lst_params) for lst_params in tup_lst_params)
 
+    def train_prior_distribution(self, loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
+                    cfg_optimizer: Dict[str, Any],
+                    prior_distribution: MultiVariateGaussianMixture,
+                    data_feeder: GeneralSentenceFeeder):
 
-    @classmethod
-    def load_encoder_from_file(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, path_state_dict: str, device):
-        # instanciate variational autoencoder
-        cfg_encoder = cfg_auto_encoder["encoder"]
-        ## MLP for \alpha, \mu, \sigma
-        for param_name in "alpha,mu,sigma".split(","):
-            cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
-        ## encoder
-        encoder = GMMLSTMEncoder(n_vocab=n_vocab, device=device, **cfg_encoder["lstm"])
-        encoder = cls._load_encoder_params(encoder=encoder, path_model_state_dict=path_state_dict, device=device)
+        # create parameters for prior distribution
+        v_alpha_y = torch.tensor(prior_distribution._alpha, device=self._device, dtype=torch.float32, requires_grad=False)
+        v_mu_y = torch.tensor(prior_distribution._mu, device=self._device, dtype=torch.float32, requires_grad=True)
+        mat_sigma_y = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])
+        v_sigma_y_ln = torch.tensor(np.log(mat_sigma_y), device=self._device, dtype=torch.float32, requires_grad=True)
 
-        model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
+        optimizer = cfg_optimizer["optimizer"](params=[v_mu_y, v_sigma_y_ln], lr=cfg_optimizer["lr"])
 
-        obj = cls(model=model, loss_reconst=None, loss_layer_wd=None, loss_layer_kldiv=None, device=device)
+        for idx, (batch, _) in enumerate(data_feeder):
+            optimizer.zero_grad()
 
-        return obj
+            v_sigma_y = torch.exp(v_sigma_y_ln)
 
+            lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
+            lst_v_alpha, lst_v_mu, lst_v_sigma = self.inference_single_step(lst_seq=lst_seq, lst_seq_len=lst_seq_len, return_numpy=False)
 
-    @classmethod
-    def _load_encoder_params(cls, encoder: nn.Module, path_model_state_dict: str, device):
+            wd = loss_layer_wd.forward(lst_v_alpha, lst_v_mu, lst_v_sigma, v_alpha_y, v_mu_y, v_sigma_y)
 
-        encoder_layer_name = "_encoder."
+            wd.backward()
+            optimizer.step()
 
-        if device.type == "cpu":
-            state_dict=torch.load(path_model_state_dict, map_location="cpu")
-        else:
-            state_dict=torch.load(path_model_state_dict)
+            if self._verbose and idx == 0:
+                print("wd before updating prior:", wd.item())
 
-        state_dict_e = OrderedDict()
-        for layer_name, params in state_dict.items():
-            if layer_name.startswith(encoder_layer_name):
-                layer_name_e = layer_name.replace(encoder_layer_name, "")
-                state_dict_e[layer_name_e] = params
+        if self._verbose:
+            print("wd after updating prior:", wd.item())
 
-        encoder.load_state_dict(state_dict=state_dict_e)
+        # reconstruct prior distribution
+        x_alpha = v_alpha_y.cpu().data.numpy()
+        x_mu = v_mu_y.cpu().data.numpy()
+        x_sigma = np.exp(v_sigma_y_ln.cpu().data.numpy())
 
-        return encoder
+        prior_updated = MultiVariateGaussianMixture(vec_alpha=x_alpha, mat_mu=x_mu, mat_cov = x_sigma**2)
+
+        return prior_updated
