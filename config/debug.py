@@ -119,7 +119,22 @@ cfg_auto_encoder = {
         "expected_wd":2.0,
         # if you want, you can manually specify l2 norm and standard deviation
         "l2_norm": 1.0,
-        "std": 0.1
+        "std": 0.1,
+        # if you want to updates prior distribution, define `update` and subsequent elements
+        "update":{
+            "target_epoch":[0,1,3], # ex. range(9, 100, 10) = [9,19,...,99]
+            "optimizer":{
+                "optimizer":torch.optim.Adam,
+                "lr":0.01
+            },
+            "sinkhorn_wasserstein": {
+                "sinkhorn_lambda":0.1,
+                "sinkhorn_iter_max":100,
+                "sinkhorn_threshold":0.1,
+                "scale":1.0,
+                "marginalize_posterior":True,
+            }
+        }
     }
 }
 

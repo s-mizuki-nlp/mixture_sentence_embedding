@@ -300,10 +300,14 @@ class Estimator(object):
         else:
             return tuple(self._to_numpy(lst_tensor=lst_params) for lst_params in tup_lst_params)
 
-    def train_prior_distribution(self, loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
+    def train_prior_distribution(self,
                     cfg_optimizer: Dict[str, Any],
+                    cfg_sinkhorn_wasserstein: Dict[str, Any],
                     prior_distribution: MultiVariateGaussianMixture,
                     data_feeder: GeneralSentenceFeeder):
+
+        # instanciate wasserstein distance layer
+        loss_layer_wd = GMMSinkhornWassersteinDistance(device=self._device, **cfg_sinkhorn_wasserstein)
 
         # create parameters for prior distribution
         v_alpha_y = torch.tensor(prior_distribution._alpha, device=self._device, dtype=torch.float32, requires_grad=False)

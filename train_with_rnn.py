@@ -91,6 +91,8 @@ def main():
     print("optimization:")
     for k, v in cfg_optimizer.items():
         print(f"\t{k}:{v}")
+    print("prior distribution:")
+    pprint.pprint(cfg_auto_encoder["prior"])
 
     # instanciate corpora
     tokenizer = CharacterTokenizer()
@@ -194,7 +196,8 @@ def main():
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
     ### instanciate estimator ###
-    estimator = Estimator(model=model, loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv, device=args.device)
+    estimator = Estimator(model=model, loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
+                          device=args.device, verbose=args.verbose)
 
     # optimizer for variational autoencoder
     optimizer = cfg_optimizer["optimizer"](model.parameters(), lr=cfg_optimizer["lr"])
@@ -256,6 +259,22 @@ def main():
             print(f"saving...:{path_trained_model_e}")
             torch.save(model.state_dict(), path_trained_model_e)
 
+        #### (optional) update prior distribution ###
+        if "update" in cfg_auto_encoder["prior"]:
+            cfg_update_prior = cfg_auto_encoder["prior"]["update"]
+            if n_epoch in cfg_update_prior["target_epoch"]:
+                print("update prior distribution. wait for a while...")
+                prior_distribution_new = estimator.train_prior_distribution(
+                    cfg_optimizer=cfg_update_prior["optimizer"],
+                    cfg_sinkhorn_wasserstein=cfg_update_prior["sinkhorn_wasserstein"],
+                    prior_distribution=prior_distribution,
+                    data_feeder=dict_data_feeder["train"]
+                )
+                # renew prior distribution
+                prior_distribution = prior_distribution_new
+                prior_distribution.save(file_path=path_prior)
+        else:
+            print("we do not update prior distribution. skip training.")
 
         #### test phase ####
         if not "test" in dict_data_feeder:
