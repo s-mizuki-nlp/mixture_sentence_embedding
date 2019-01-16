@@ -310,7 +310,8 @@ class Estimator(object):
         if cfg_sinkhorn_wasserstein is None:
             if isinstance(self._loss_layer_wd, EmpiricalSlicedWassersteinDistance):
                 raise AttributeError(f"{self._loss_layer_wd.__class__.__name__} is not supported.")
-            print("we will reuse wasserstein loss layer.")
+            if self._verbose:
+                print("prior distribution updater will reuse vae's wasserstein loss layer.")
             loss_layer_wd = self._loss_layer_wd
         else:
             loss_layer_wd = GMMSinkhornWassersteinDistance(device=self._device, **cfg_sinkhorn_wasserstein)
