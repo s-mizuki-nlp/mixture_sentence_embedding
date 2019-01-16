@@ -12,7 +12,7 @@ from .mixture import MultiVariateGaussianMixture
 # Earth Mover's Distance.
 def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np.ndarray] = None,
                          mat_x: Optional[np.ndarray] = None, mat_y: Optional[np.ndarray] = None,
-                         lambda_: float = 0.1, epsilon: float = 0.01, n_iter_max: int = 20,
+                         lambda_: float = 0.1, epsilon: float = 0.1, n_iter_max: int = 100,
                          return_optimal_transport: bool = False):
     """
     calculate earth mover's distance between two point-mass distribution (ex. set of word vectors)
@@ -27,20 +27,21 @@ def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np
     vec_ln_q = np.log(vec_q)
     vec_ln_a = np.zeros_like(vec_p, dtype=np.float) # vec_ln_p.copy()
     vec_ln_b = np.zeros_like(vec_q, dtype=np.float) # vec_ln_q.copy()
-    mat_ln_k = -mat_dist / lambda_
+    mat_ln_k = -mat_dist * lambda_
 
     for n_iter in range(n_iter_max):
 
+        vec_ln_a_prev = vec_ln_a.copy()
         vec_ln_a = vec_ln_p - logsumexp(mat_ln_k + vec_ln_b.reshape(1,-1), axis=1)
         vec_ln_b = vec_ln_q - logsumexp(mat_ln_k.T + vec_ln_a.reshape(1,-1), axis=1)
 
         # termination
-        ## difference with condition
-        mat_gamma = np.exp(vec_ln_a.reshape(-1,1) + mat_ln_k + vec_ln_b.reshape(1,-1))
-        err = np.mean(np.abs(mat_gamma.sum(axis=1) - vec_p))
+        ## difference with previous iteration
+        err = np.sum(np.abs(vec_ln_a - vec_ln_a_prev))
         if err < epsilon:
             break
 
+    mat_gamma = np.exp(vec_ln_a.reshape(-1,1) + mat_ln_k + vec_ln_b.reshape(1,-1))
     dist = np.sum(mat_gamma*mat_dist)
 
     if return_optimal_transport:
