@@ -465,7 +465,7 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
 
 class GMMApproxKLDivergence(BaseAnnealableLoss):
 
-    def __init__(self, marginalize_posterior: bool,
+    def __init__(self, marginalize_posterior: bool = False,
                  scale=1.0,
                  weight_function_for_sequence_length: Optional[Callable] = None,
                  size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
@@ -477,6 +477,8 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
         :param weight_function_for_sequence_length: another scale parameter that depends on the sequence length.
         :param reduction: it must be `samplewise_mean`
         """
+
+        assert marginalize_posterior == False, "this metric does not support `marginalize_posterior` option."
 
         assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
 
