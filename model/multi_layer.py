@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+import torch
 from torch import nn
 
 class MultiDenseLayer(nn.Module):
@@ -39,3 +40,28 @@ class MultiDenseLayer(nn.Module):
                 h = self._activation(dense(h))
 
         return h
+
+class IdentityLayer(nn.Module):
+
+    def __init__(self, n_dim_out: int):
+        """
+        dummy layer which output specific value which is independent on the input
+        :param n_dim_out: output dimension size
+        """
+        super(IdentityLayer, self).__init__()
+        self._n_dim_out = n_dim_out
+        self._shared_output = nn.Parameter(torch.zeros(n_dim_out, dtype=torch.float, requires_grad=True))
+
+    def forward(self, x: torch.Tensor):
+        # input shape: (N_b, N_t, Any)
+        # output shape: (N_b, N_t, N_dim_out)
+
+        ret_dim = [1]*x.ndimension()
+        ret_dim[-1] = -1
+        ret_shape = list(x.shape)
+        ret_shape[-1] = self._n_dim_out
+
+        # v_ret[b,t,:] == shared_param
+        v_ret = self._shared_output.reshape(ret_dim).expand(ret_shape)
+
+        return v_ret
