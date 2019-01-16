@@ -302,12 +302,18 @@ class Estimator(object):
 
     def train_prior_distribution(self,
                     cfg_optimizer: Dict[str, Any],
-                    cfg_sinkhorn_wasserstein: Dict[str, Any],
+                    cfg_sinkhorn_wasserstein: Optional[Dict[str, Any]],
                     prior_distribution: MultiVariateGaussianMixture,
                     data_feeder: GeneralSentenceFeeder):
 
         # instanciate wasserstein distance layer
-        loss_layer_wd = GMMSinkhornWassersteinDistance(device=self._device, **cfg_sinkhorn_wasserstein)
+        if cfg_sinkhorn_wasserstein is None:
+            if isinstance(self._loss_layer_wd, EmpiricalSlicedWassersteinDistance):
+                raise AttributeError(f"{self._loss_layer_wd.__class__.__name__} is not supported.")
+            print("we will reuse wasserstein loss layer.")
+            loss_layer_wd = self._loss_layer_wd
+        else:
+            loss_layer_wd = GMMSinkhornWassersteinDistance(device=self._device, **cfg_sinkhorn_wasserstein)
 
         # create parameters for prior distribution
         v_alpha_y = torch.tensor(prior_distribution._alpha, device=self._device, dtype=torch.float32, requires_grad=False)

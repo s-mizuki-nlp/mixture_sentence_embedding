@@ -127,6 +127,8 @@ cfg_auto_encoder = {
                 "optimizer":torch.optim.Adam,
                 "lr":0.01
             },
+            # if you want to share with loss layer, just specify `None`
+            # "sinkhorn_wasserstein": None
             "sinkhorn_wasserstein": {
                 "sinkhorn_lambda":0.1,
                 "sinkhorn_iter_max":100,
