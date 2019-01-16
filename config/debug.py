@@ -97,17 +97,24 @@ cfg_auto_encoder = {
             # "empirical_sliced_wasserstein": {
             #     "n_slice":10,
             #     "scale":1.
-            # },
+            # }
             # 2) sinkhorn wasserstein distance
             ## standard version: E_x[d(p(z|x),q(z))]
             ## marginalized version: d(E_x[p(z|x)],q(z))
-            "sinkhorn_wasserstein": {
-                "sinkhorn_lambda":0.1,
-                "sinkhorn_iter_max":100,
-                "sinkhorn_threshold":0.1,
-                "scale":1.0,
-                "marginalize_posterior":False,
-                "weight_function_for_sequence_length":np.sqrt
+            # "sinkhorn_wasserstein": {
+            #     "sinkhorn_lambda":0.1,
+            #     "sinkhorn_iter_max":100,
+            #     "sinkhorn_threshold":0.1,
+            #     "scale":1.0,
+            #     "marginalize_posterior":False,
+            #     "weight_function_for_sequence_length":np.sqrt
+            # }
+            # 3) kullback-leibler divergence
+            ## currently, this metric doesn't support marginalized version
+            "kullback_leibler": {
+                # "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=2E+6),
+                "scale": 1.0,
+                "weight_function_for_sequence_length":None
             }
         },
         "kldiv": {
@@ -130,14 +137,15 @@ cfg_auto_encoder = {
                 "lr":0.01
             },
             # if you want to share with loss layer, just specify `None`
-            "sinkhorn_wasserstein": None
-            # "sinkhorn_wasserstein": {
-            #     "sinkhorn_lambda":0.1,
-            #     "sinkhorn_iter_max":100,
-            #     "sinkhorn_threshold":0.1,
-            #     "scale":1.0,
-            #     "marginalize_posterior":True,
-            # }
+            "regularizer": {
+                "sinkhorn_wasserstein": {
+                    "sinkhorn_lambda":0.1,
+                    "sinkhorn_iter_max":100,
+                    "sinkhorn_threshold":0.1,
+                    "scale":1.0,
+                    "marginalize_posterior":True,
+                }
+            }
         }
     }
 }
@@ -194,14 +202,8 @@ if not cfg_auto_encoder["sampler"]["enable_gumbel_softmax_trick"]:
     warnings.warn("disabling gumbel-softmax trick will result in improper sampling from posterior distribution. ARE YOU OK?")
 
 # regularizer
-if "empirical_sliced_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
-    if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
-        raise ValueError("you can't define different regularizers simultaneously.")
-    else:
-        pass
-else:
-    if not "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
-        raise ValueError("you have to define wasserstein regularizer.")
+if len(cfg_auto_encoder["loss"]["reg"]) > 1:
+    raise ValueError("you can't define different regularizers simultaneously.")
 
 if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
     if cfg_auto_encoder["encoder"]["sigma"] is None:

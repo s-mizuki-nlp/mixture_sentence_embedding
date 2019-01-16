@@ -39,7 +39,7 @@ from model.noise_layer import GMMSampler
 from distribution.mixture import MultiVariateGaussianMixture
 from utility import generate_random_orthogonal_vectors, calculate_prior_dist_params, calculate_mean_l2_between_sample
 ## loss functions
-from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
+from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance, GMMApproxKLDivergence
 from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
@@ -192,12 +192,18 @@ def main():
     model.to(device=args.device)
 
     ## loss layers
-    ### wasserstein distance: d(p(z|x), q(z))
-    if is_sliced_wasserstein:
-        loss_wasserstein = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["empirical_sliced_wasserstein"])
+    ### regularizer between posteriors and prior; wasserstein distance or kullback-leibler divergence: d(p(z|x), q(z))
+    cfg_regularizer = cfg_auto_encoder["loss"]["reg"]
+    if regularizer_name == "empirical_sliced_wasserstein":
+        loss_regularizer = EmpiricalSlicedWassersteinDistance(device=args.device, **cfg_regularizer["empirical_sliced_wasserstein"])
+    elif regularizer_name == "sinkhorn_wasserstein":
+        loss_regularizer = GMMSinkhornWassersteinDistance(device=args.device, **cfg_regularizer["sinkhorn_wasserstein"])
+    elif regularizer_name == "kullback_leibler":
+        loss_regularizer = GMMApproxKLDivergence(device=args.device, **cfg_regularizer["kullback_leibler"])
     else:
-        loss_wasserstein = GMMSinkhornWassersteinDistance(device=args.device, **cfg_auto_encoder["loss"]["reg"]["sinkhorn_wasserstein"])
-    ### kullback-leibler divergence: KL(p(\alpha|x), q(\alpha))
+        raise NotImplementedError("unsupported regularizer type:", regularizer_name)
+
+    ### kullback-leibler divergence on \alpha: KL(p(\alpha|x), q(\alpha))
     if cfg_auto_encoder["loss"]["kldiv"]["enabled"]:
         loss_kldiv = MaskedKLDivLoss(scale=cfg_auto_encoder["loss"]["kldiv"]["scale"], reduction="samplewise_mean")
     else:
@@ -206,7 +212,7 @@ def main():
     loss_reconst = PaddedNLLLoss(reduction="samplewise_mean")
 
     ### instanciate estimator ###
-    estimator = Estimator(model=model, loss_reconst=loss_reconst, loss_layer_wd=loss_wasserstein, loss_layer_kldiv=loss_kldiv,
+    estimator = Estimator(model=model, loss_reconst=loss_reconst, loss_layer_reg=loss_regularizer, loss_layer_kldiv=loss_kldiv,
                           device=args.device, verbose=args.verbose)
 
     # optimizer for variational autoencoder
@@ -276,7 +282,7 @@ def main():
                 print("update prior distribution. wait for a while...")
                 prior_distribution_new = estimator.train_prior_distribution(
                     cfg_optimizer=cfg_update_prior["optimizer"],
-                    cfg_sinkhorn_wasserstein=cfg_update_prior["sinkhorn_wasserstein"],
+                    cfg_regularizer=cfg_update_prior["regularizer"],
                     prior_distribution=prior_distribution,
                     data_feeder=dict_data_feeder["train"]
                 )

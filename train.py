@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+import warnings
 from collections import OrderedDict
 from typing import List, Dict, Union, Any, Optional
 from copy import deepcopy
@@ -22,7 +23,7 @@ from model.encoder import GMMLSTMEncoder
 from distribution.mixture import MultiVariateGaussianMixture
 from utility import calculate_mean_l2_between_sample
 ## loss functions
-from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance
+from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance, GMMApproxKLDivergence
 from model.loss import MaskedKLDivLoss
 from model.loss import PaddedNLLLoss
 # variational autoencoder
@@ -38,20 +39,20 @@ class Estimator(object):
 
     def __init__(self, model: VariationalAutoEncoder,
                  loss_reconst: PaddedNLLLoss,
-                 loss_layer_wd: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance],
+                 loss_layer_reg: Union[EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance, GMMApproxKLDivergence],
                  loss_layer_kldiv: Optional[MaskedKLDivLoss],
                  device,
                  verbose: bool = False):
         self._model = model
         self._loss_reconst = loss_reconst
-        self._loss_layer_wd = loss_layer_wd
+        self._loss_layer_reg = loss_layer_reg
         self._loss_layer_kldiv = loss_layer_kldiv
         self._device = device
         self._verbose = verbose
 
     @property
     def reg_wasserstein(self):
-        return self._loss_layer_wd
+        return self._loss_layer_reg
 
     @property
     def reg_kldiv(self):
@@ -152,23 +153,23 @@ class Estimator(object):
 
             # regularization losses(sample-wise mean)
             ## 1. wasserstein distance between posterior and prior
-            if isinstance(self._loss_layer_wd, EmpiricalSlicedWassersteinDistance):
+            if isinstance(self._loss_layer_reg, EmpiricalSlicedWassersteinDistance):
                 ## 1) empirical sliced wasserstein distance
                 n_sample = len(x_in) * self._model.sampler_size
                 v_z_prior = prior_distribution.random(size=n_sample)
                 v_z_prior = torch.tensor(v_z_prior, dtype=torch.float32, requires_grad=False).to(device=self._device)
                 v_z_posterior_v = v_z_posterior.view((-1, prior_distribution.n_dim))
-                reg_loss_wd = self._loss_layer_wd.forward(input=v_z_posterior_v, target=v_z_prior)
-            elif isinstance(self._loss_layer_wd, GMMSinkhornWassersteinDistance):
+                reg_loss_prior = self._loss_layer_reg.forward(input=v_z_posterior_v, target=v_z_prior)
+            elif isinstance(self._loss_layer_reg, (GMMSinkhornWassersteinDistance, GMMApproxKLDivergence)):
                 ## 2) (marginalized) sinkhorn wasserstein distance
                 v_alpha_prior = torch.tensor(prior_distribution._alpha, dtype=torch.float32, requires_grad=False).to(device=self._device)
                 v_mu_prior = torch.tensor(prior_distribution._mu, dtype=torch.float32, requires_grad=False).to(device=self._device)
                 mat_sigma_prior = np.vstack([np.sqrt(np.diag(cov)) for cov in prior_distribution._cov])
                 v_sigma_prior = torch.tensor(mat_sigma_prior, dtype=torch.float32, requires_grad=False).to(device=self._device)
-                reg_loss_wd = self._loss_layer_wd.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
-                                                    vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
+                reg_loss_prior = self._loss_layer_reg.forward(lst_vec_alpha_x=lst_v_alpha, lst_mat_mu_x=lst_v_mu, lst_mat_std_x=lst_v_sigma,
+                                                           vec_alpha_y=v_alpha_prior, mat_mu_y=v_mu_prior, mat_std_y=v_sigma_prior)
             else:
-                raise NotImplementedError(f"unsupported regularization layer: {type(self._loss_layer_wd)}")
+                raise NotImplementedError(f"unsupported regularization layer: {type(self._loss_layer_reg)}")
 
             ## 2. (optional) kullback-leibler divergence on \alpha
             if self._loss_layer_kldiv is not None:
@@ -177,10 +178,10 @@ class Estimator(object):
                 arr_unif = utils.pad_numpy_sequence(lst_arr_unif)
                 v_alpha_unif = torch.from_numpy(arr_unif).to(device=self._device)
                 reg_loss_kldiv = self._loss_layer_kldiv.forward(input=v_alpha, target=v_alpha_unif, input_mask=v_x_in_mask)
-                reg_loss = reg_loss_wd + reg_loss_kldiv
+                reg_loss = reg_loss_prior + reg_loss_kldiv
             else:
                 reg_loss_kldiv = None
-                reg_loss = reg_loss_wd
+                reg_loss = reg_loss_prior
 
             # reconstruction loss(sample-wise mean)
             reconst_loss = self._loss_reconst.forward(y_ln_prob=v_ln_prob_y, y_true=v_x_out, y_len=x_out_len)
@@ -195,15 +196,25 @@ class Estimator(object):
                 nn.utils.clip_grad_value_(self._model.parameters(), clip_value=clip_gradient)
             optimizer.step()
 
-        return reconst_loss, reg_loss_wd, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior
+        return reconst_loss, reg_loss_prior, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior
 
 
     def _compute_metrics_minibatch(self, n_sentence, n_token,
-                         reconst_loss: torch.Tensor, reg_loss_wd: torch.Tensor, reg_loss_kldiv: Optional[torch.Tensor],
-                         lst_v_alpha: List[torch.Tensor], lst_v_mu: List[torch.Tensor], lst_v_sigma: List[torch.Tensor],
-                         v_z_posterior: torch.Tensor,
-                         prior_distribution: MultiVariateGaussianMixture,
-                         evaluation_metrics: List[str]):
+                                   reconst_loss: torch.Tensor, reg_loss_prior: torch.Tensor, reg_loss_kldiv: Optional[torch.Tensor],
+                                   lst_v_alpha: List[torch.Tensor], lst_v_mu: List[torch.Tensor], lst_v_sigma: List[torch.Tensor],
+                                   v_z_posterior: torch.Tensor,
+                                   prior_distribution: MultiVariateGaussianMixture,
+                                   evaluation_metrics: List[str]):
+
+        if isinstance(self._loss_layer_reg, EmpiricalSlicedWassersteinDistance):
+            loss_name = "swd"
+        elif isinstance(self._loss_layer_reg, GMMSinkhornWassersteinDistance):
+            loss_name = "wd"
+        elif isinstance(self._loss_layer_reg, GMMApproxKLDivergence):
+            loss_name = "kldiv"
+        else:
+            raise NotImplementedError("unknown loss layer detected.")
+
         # compute metrics for single minibatch
         nll = float(reconst_loss)
         nll_token = nll * n_sentence / n_token # lnq(x|z)*N_sentence/N_token
@@ -217,12 +228,12 @@ class Estimator(object):
             "mean_max_alpha":mean_max_alpha,
             "mean_l2_dist":float(mean_l2_dist),
             "mean_sigma":float(mean_sigma),
-            "wd":float(reg_loss_wd),
-            "wd_scale":self._loss_layer_wd.scale,
+            loss_name:float(reg_loss_prior),
+            f"{loss_name}_scale":self._loss_layer_reg.scale,
             "reg_alpha":np.nan if reg_loss_kldiv is None else float(reg_loss_kldiv),
             "nll":nll,
             "nll_token":nll_token,
-            "total_cost":float(reconst_loss) + float(reg_loss_wd),
+            "total_cost":float(reconst_loss) + float(reg_loss_prior),
             "kldiv_ana":None,
             "kldiv_mc":None,
             "elbo":None
@@ -244,7 +255,7 @@ class Estimator(object):
     def train_single_step(self, lst_seq, lst_seq_len, optimizer, prior_distribution, clip_gradient_value: Optional[float] = None,
                           evaluation_metrics: Optional[List[str]] = None):
 
-        reconst_loss, reg_loss_wd, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
+        reconst_loss, reg_loss_prior, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
         self._forward(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=optimizer, prior_distribution=prior_distribution,
                       train_mode=True, inference_mode=False,
                       clip_gradient=clip_gradient_value)
@@ -255,7 +266,7 @@ class Estimator(object):
         if evaluation_metrics is not None:
             dict_metrics = self._compute_metrics_minibatch(
                 n_sentence=n_sentence, n_token=n_token,
-                reconst_loss=reconst_loss, reg_loss_wd=reg_loss_wd, reg_loss_kldiv=reg_loss_kldiv,
+                reconst_loss=reconst_loss, reg_loss_prior=reg_loss_prior, reg_loss_kldiv=reg_loss_kldiv,
                 lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
                 v_z_posterior=v_z_posterior,
                 prior_distribution=prior_distribution,
@@ -269,7 +280,7 @@ class Estimator(object):
 
     def test_single_step(self, lst_seq, lst_seq_len, prior_distribution, evaluation_metrics: [List[str]]):
 
-        reconst_loss, reg_loss_wd, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
+        reconst_loss, reg_loss_prior, reg_loss_kldiv, lst_v_alpha, lst_v_mu, lst_v_sigma, v_z_posterior = \
         self._forward(lst_seq=lst_seq, lst_seq_len=lst_seq_len, optimizer=None, prior_distribution=prior_distribution,
                       train_mode=False, inference_mode=False, clip_gradient=None)
 
@@ -278,7 +289,7 @@ class Estimator(object):
 
         dict_metrics = self._compute_metrics_minibatch(
             n_sentence=n_sentence, n_token=n_token,
-            reconst_loss=reconst_loss, reg_loss_wd=reg_loss_wd, reg_loss_kldiv=reg_loss_kldiv,
+            reconst_loss=reconst_loss, reg_loss_prior=reg_loss_prior, reg_loss_kldiv=reg_loss_kldiv,
             lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
             v_z_posterior=v_z_posterior,
             prior_distribution=prior_distribution,
@@ -301,20 +312,29 @@ class Estimator(object):
             return tuple(self._to_numpy(lst_tensor=lst_params) for lst_params in tup_lst_params)
 
     def train_prior_distribution(self,
-                    cfg_optimizer: Dict[str, Any],
-                    cfg_sinkhorn_wasserstein: Optional[Dict[str, Any]],
-                    prior_distribution: MultiVariateGaussianMixture,
-                    data_feeder: GeneralSentenceFeeder):
+                                 cfg_optimizer: Dict[str, Any],
+                                 cfg_regularizer: Optional[Dict[str, Any]],
+                                 prior_distribution: MultiVariateGaussianMixture,
+                                 data_feeder: GeneralSentenceFeeder):
 
         # instanciate wasserstein distance layer
-        if cfg_sinkhorn_wasserstein is None:
-            if isinstance(self._loss_layer_wd, EmpiricalSlicedWassersteinDistance):
-                raise AttributeError(f"{self._loss_layer_wd.__class__.__name__} is not supported.")
+        if cfg_regularizer is None:
+            if isinstance(self._loss_layer_reg, EmpiricalSlicedWassersteinDistance):
+                raise AttributeError(f"{self._loss_layer_reg.__class__.__name__} is not supported.")
             if self._verbose:
-                print("prior distribution updater will reuse vae's wasserstein loss layer.")
-            loss_layer_wd = self._loss_layer_wd
+                print("prior distribution updater will reuse vae's regularization loss layer.")
+            loss_layer_reg = self._loss_layer_reg
         else:
-            loss_layer_wd = GMMSinkhornWassersteinDistance(device=self._device, **cfg_sinkhorn_wasserstein)
+            regularizer_name = next(iter(cfg_regularizer))
+            if regularizer_name == "sinkhorn_wasserstein":
+                loss_layer_reg = GMMSinkhornWassersteinDistance(device=self._device, **cfg_regularizer["sinkhorn_wasserstein"])
+            elif regularizer_name == "kullback_leibler":
+                loss_layer_reg = GMMApproxKLDivergence(device=self._device, **cfg_regularizer["kullback_leibler"])
+            else:
+                raise NotImplementedError("unsupported regularizer type:", regularizer_name)
+
+            if not isinstance(loss_layer_reg, type(self._loss_layer_reg)):
+                warnings.warn("you specified different type of regularizer to update prior:", regularizer_name)
 
         # create parameters for prior distribution
         v_alpha_y = torch.tensor(prior_distribution._alpha, device=self._device, dtype=torch.float32, requires_grad=False)
@@ -332,16 +352,16 @@ class Estimator(object):
             lst_seq_len, lst_seq = utils.len_pad_sort(lst_seq=batch)
             lst_v_alpha, lst_v_mu, lst_v_sigma = self.inference_single_step(lst_seq=lst_seq, lst_seq_len=lst_seq_len, return_numpy=False)
 
-            wd = loss_layer_wd.forward(lst_v_alpha, lst_v_mu, lst_v_sigma, v_alpha_y, v_mu_y, v_sigma_y)
+            reg_loss = loss_layer_reg.forward(lst_v_alpha, lst_v_mu, lst_v_sigma, v_alpha_y, v_mu_y, v_sigma_y)
 
-            wd.backward()
+            reg_loss.backward()
             optimizer.step()
 
             if self._verbose and idx == 0:
-                print("wd before updating prior:", wd.item())
+                print("reg-loss before updating prior:", reg_loss.item())
 
         if self._verbose:
-            print("wd after updating prior:", wd.item())
+            print("reg-loss after updating prior:", reg_loss.item())
 
         # reconstruct prior distribution
         x_alpha = v_alpha_y.cpu().data.numpy()
