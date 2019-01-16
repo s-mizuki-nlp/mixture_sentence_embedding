@@ -26,7 +26,7 @@ from preprocess.dataset_feeder import GeneralSentenceFeeder
 from preprocess import utils
 
 # encoders
-from model.multi_layer import MultiDenseLayer
+from model.multi_layer import MultiDenseLayer, IdentityLayer
 from model.encoder import GMMLSTMEncoder
 # decoder
 from model.attention import  SimpleGlobalAttention, MultiHeadedAttention, PassTuru
@@ -153,7 +153,17 @@ def main():
     cfg_encoder = cfg_auto_encoder["encoder"]
     ## MLP for \alpha, \mu, \sigma
     for param_name in "alpha,mu,sigma".split(","):
-        cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
+        if cfg_encoder[param_name] is None:
+            if param_name == "alpha":
+                layer = None
+            elif param_name == "sigma":
+                layer = IdentityLayer(n_dim_out=cfg_auto_encoder["prior"]["n_dim"])
+            else:
+                pprint.pprint(cfg_encoder)
+                raise NotImplementedError("unsupported configuration detected.")
+        else:
+            layer = MultiDenseLayer(**cfg_encoder[param_name])
+        cfg_encoder["lstm"][f"encoder_{param_name}"] = layer
     ## encoder
     encoder = GMMLSTMEncoder(n_vocab=dictionary.max_id+1, device=args.device, **cfg_encoder["lstm"])
 

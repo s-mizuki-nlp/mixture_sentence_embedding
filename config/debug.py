@@ -44,13 +44,15 @@ cfg_auto_encoder = {
             "n_hidden":2,
             "activation_function":torch.relu
         },
-        "sigma": {
-            "n_dim_in":n_dim_lstm_output,
-            "n_dim_out":n_dim_latent, # it must be either 1 or n_dim_latent.
-            "n_dim_hidden":n_dim_lstm_output,
-            "n_hidden":2,
-            "activation_function":torch.relu
-        }
+        # if you want to set \sigma identical to the lstm state, just specify None
+        # "sigma": {
+        #     "n_dim_in":n_dim_lstm_output,
+        #     "n_dim_out":n_dim_latent, # it must be either 1 or n_dim_latent.
+        #     "n_dim_hidden":n_dim_lstm_output,
+        #     "n_hidden":2,
+        #     "activation_function":torch.relu
+        # }
+        "sigma": None
     },
     "decoder": {
         "lstm":{
@@ -128,14 +130,14 @@ cfg_auto_encoder = {
                 "lr":0.01
             },
             # if you want to share with loss layer, just specify `None`
-            # "sinkhorn_wasserstein": None
-            "sinkhorn_wasserstein": {
-                "sinkhorn_lambda":0.1,
-                "sinkhorn_iter_max":100,
-                "sinkhorn_threshold":0.1,
-                "scale":1.0,
-                "marginalize_posterior":True,
-            }
+            "sinkhorn_wasserstein": None
+            # "sinkhorn_wasserstein": {
+            #     "sinkhorn_lambda":0.1,
+            #     "sinkhorn_iter_max":100,
+            #     "sinkhorn_threshold":0.1,
+            #     "scale":1.0,
+            #     "marginalize_posterior":True,
+            # }
         }
     }
 }
@@ -202,8 +204,11 @@ else:
         raise ValueError("you have to define wasserstein regularizer.")
 
 if "sinkhorn_wasserstein" in cfg_auto_encoder["loss"]["reg"]:
-    if cfg_auto_encoder["encoder"]["sigma"]["n_dim_out"] == 1:
-        warnings.warn("diagonal covariance is recommended. ARE YOU OK?")
+    if cfg_auto_encoder["encoder"]["sigma"] is None:
+        warnings.warn("identical covariance may not be recommended. ARE YOU OK?")
+    else:
+        if cfg_auto_encoder["encoder"]["sigma"]["n_dim_out"] == 1:
+            warnings.warn("diagonal covariance is recommended. ARE YOU OK?")
 
 if "simple_attention" in cfg_auto_encoder["decoder"]["latent"]:
     cfg_attn = cfg_auto_encoder["decoder"]["latent"]["simple_attention"]

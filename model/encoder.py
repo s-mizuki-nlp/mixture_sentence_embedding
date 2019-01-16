@@ -3,8 +3,8 @@
 
 import torch
 from torch import nn
-from .multi_layer import MultiDenseLayer
-from typing import Optional
+from .multi_layer import MultiDenseLayer, IdentityLayer
+from typing import Optional, Union
 import numpy as np
 
 class LSTMEncoder(nn.Module):
@@ -82,7 +82,7 @@ class GMMLSTMEncoder(LSTMEncoder):
     __batch_first = True
 
     def __init__(self, n_vocab: int, n_dim_embedding: int, n_dim_lstm_hidden: int, n_lstm_layer: int, bidirectional: bool,
-                 encoder_mu: MultiDenseLayer, encoder_sigma: MultiDenseLayer, encoder_alpha: Optional[MultiDenseLayer] = None,
+                 encoder_mu: MultiDenseLayer, encoder_sigma: Union[MultiDenseLayer, IdentityLayer], encoder_alpha: Optional[MultiDenseLayer],
                  custom_embedding_layer: Optional[nn.Embedding] = None,
                  highway: bool=False, return_state: bool=False, device=torch.device("cpu"), **kwargs):
 
