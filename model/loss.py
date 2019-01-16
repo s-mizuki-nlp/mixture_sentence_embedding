@@ -467,6 +467,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
 
     def __init__(self, marginalize_posterior: bool = False,
                  scale=1.0,
+                 multiplier=1.0,
                  weight_function_for_sequence_length: Optional[Callable] = None,
                  size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
         """
@@ -474,6 +475,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
 
         :param marginalize_posterior: marginalize out posterior distribution(=E_x[p(z|x]) or not
         :param scale: scale parameter. output will be scale * wasserstein distance
+        :param multiplier: multiplication value over the output. it should be the number of samples sampled from posterior distribution.
         :param weight_function_for_sequence_length: another scale parameter that depends on the sequence length.
         :param reduction: it must be `samplewise_mean`
         """
@@ -486,6 +488,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
 
         self._marginalize_posterior = marginalize_posterior
         self._weight_function = weight_function_for_sequence_length
+        self._multiplier = float(multiplier)
         self._device = device
 
     def _generate_weight(self, lst_seq_len: List[int]):
@@ -590,6 +593,6 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
                     weight_sum += weight
 
             if weight_sum > 0:
-                v_kldiv = torch.div(v_kldiv, weight_sum) * self._scale
+                v_kldiv = torch.div(v_kldiv, weight_sum) * self._scale * self._multiplier
 
             return v_kldiv

@@ -18,6 +18,7 @@ n_dim_lstm_hidden = 128
 n_dim_embedding = 128
 n_dim_lstm_output = n_dim_lstm_hidden * (bidirectional + 1)
 n_gmm_component = 16
+n_sample_from_encoder = 4
 
 cfg_auto_encoder = {
     "encoder": {
@@ -83,7 +84,7 @@ cfg_auto_encoder = {
         "n_dim_in":n_dim_lstm_hidden
     },
     "sampler": {
-        "n_sample":4,
+        "n_sample":n_sample_from_encoder,
         "param_tau":0.03,
         "expect_log_alpha":True,
         "enable_gumbel_softmax_trick":True
@@ -108,7 +109,8 @@ cfg_auto_encoder = {
             "kullback_leibler": {
                 # "scale":sigmoid_generator(scale=1.0, coef=5E-6, offset=2E+6),
                 "scale": 1.0,
-                "weight_function_for_sequence_length":None
+                "weight_function_for_sequence_length":None,
+                "multiplier":1.0
             }
         },
         "kldiv": {
