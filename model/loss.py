@@ -461,3 +461,133 @@ class GMMSinkhornWassersteinDistance(BaseAnnealableLoss):
                 v_wd_sq = torch.div(v_wd_sq, weight_sum) * self._scale
 
             return v_wd_sq
+
+
+class GMMApproxKLDivergence(BaseAnnealableLoss):
+
+    def __init__(self, marginalize_posterior: bool,
+                 scale=1.0,
+                 weight_function_for_sequence_length: Optional[Callable] = None,
+                 size_average=None, reduce=None, reduction='samplewise_mean', device=torch.device("cpu")):
+        """
+        approximated kullback-leibler divergence between two gaussian mixtures using variational approximation.
+
+        :param marginalize_posterior: marginalize out posterior distribution(=E_x[p(z|x]) or not
+        :param scale: scale parameter. output will be scale * wasserstein distance
+        :param weight_function_for_sequence_length: another scale parameter that depends on the sequence length.
+        :param reduction: it must be `samplewise_mean`
+        """
+
+        assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
+
+        super(GMMApproxKLDivergence, self).__init__(scale, size_average, reduce, reduction)
+
+        self._marginalize_posterior = marginalize_posterior
+        self._weight_function = weight_function_for_sequence_length
+        self._device = device
+
+    def _generate_weight(self, lst_seq_len: List[int]):
+        n_mb = len(lst_seq_len)
+        if self._weight_function is None:
+            return np.full(shape=n_mb, fill_value=1./n_mb)
+        else:
+            vec_w = np.array([self._weight_function(seq_len) for seq_len in lst_seq_len])
+            vec_w = vec_w / np.sum(vec_w)
+            return vec_w
+
+    def _kldiv_diag_parallel(self, mat_mu_x:torch.Tensor, mat_cov_x:torch.Tensor,
+                             mat_mu_y: Optional[torch.Tensor] = None, mat_cov_y: Optional[torch.Tensor] = None):
+        n_dim = mat_mu_x.shape[0]
+
+        # return: (n_c_x, n_c_y)
+        # return[i,j] = KL(p_x_i||p_y_j)
+
+        if mat_mu_y is None:
+            mat_mu_y = mat_mu_x
+        if mat_cov_y is None:
+            mat_cov_y = mat_cov_x
+
+        v_ln_nu_sum_x = torch.sum(torch.log(mat_cov_x), dim=-1)
+        v_ln_nu_sum_y = torch.sum(torch.log(mat_cov_y), dim=-1)
+        v_det_term = v_ln_nu_sum_x.reshape(-1,1) + v_ln_nu_sum_y.reshape(1,-1)
+
+        v_tr_term = torch.mm(mat_cov_x, torch.transpose(1./mat_cov_y, 0, 1))
+
+        v_quad_term_xx = torch.mm(mat_mu_x**2, torch.transpose(1./mat_cov_y, 0, 1))
+        v_quad_term_xy = torch.mm(mat_mu_x, torch.transpose(mat_mu_y/mat_cov_y, 0, 1))
+        v_quad_term_yy = torch.sum(mat_mu_y**2 / mat_cov_y, dim=-1)
+        v_quad_term = v_quad_term_xx - 2*v_quad_term_xy + v_quad_term_yy.reshape(1,-1)
+
+        mat_kldiv = 0.5*(v_det_term + v_tr_term - n_dim + v_quad_term)
+
+        return mat_kldiv
+
+    def _approx_kldiv_between_diag_gmm_parallel(self, v_vec_alpha_x: torch.Tensor, v_mat_mu_x: torch.Tensor, v_mat_cov_x: torch.Tensor,
+                                       v_vec_alpha_y: torch.Tensor, v_mat_mu_y: torch.Tensor, v_mat_cov_y: torch.Tensor):
+
+        v_vec_ln_alpha_x = torch.log(v_vec_alpha_x)
+        v_vec_ln_alpha_y = torch.log(v_vec_alpha_y)
+
+        # kldiv_x_x: (n_c_x, n_c_x); kldiv_x_x[i,j] = KL(p_x_i||p_x_j)
+        # kldiv_x_y: (n_c_x, n_c_y); kldiv_x_y[i,j] = KL(p_x_i||p_y_j)
+        mat_kldiv_x_x = self._kldiv_diag_parallel(v_mat_mu_x, v_mat_cov_x)
+        mat_kldiv_x_y = self._kldiv_diag_parallel(v_mat_mu_x, v_mat_cov_x, v_mat_mu_y, v_mat_cov_y)
+
+        # log_sum_pi_exp_c_x: (n_c_x,)
+        log_sum_pi_exp_c_x = torch.logsumexp(v_vec_ln_alpha_x.reshape(-1,1) - mat_kldiv_x_x, dim=-1)
+        # log_sum_pi_c_x_y: (n_c_x,)
+        log_sum_pi_exp_c_x_y = torch.logsumexp(v_vec_ln_alpha_y.reshape(1,-1) - mat_kldiv_x_y, dim=-1)
+
+        kldiv = torch.sum((log_sum_pi_exp_c_x - log_sum_pi_exp_c_x_y)*v_vec_alpha_x)
+
+        return kldiv
+
+    def _marginalize_gaussian_mixture(self, lst_vec_alpha: List[torch.Tensor], lst_mat_mu: List[torch.Tensor], lst_mat_std: List[torch.Tensor],
+                                      lst_weight: List[float]):
+
+        # \alpha = \sum_{b}{w_b * \alpha_b}: (\sum{N_component})
+        lst_vec_alpha_w = [vec_alpha * w for vec_alpha, w in zip(lst_vec_alpha, lst_weight)]
+        vec_alpha = torch.cat(lst_vec_alpha_w)
+        # \mu: (\sum{N_component}, N_dim)
+        mat_mu = torch.cat(lst_mat_mu, dim=0)
+        # \sigma: (\sum{N_component}, N_dim) or (\sum{N_component}, 1)
+        mat_std = torch.cat(lst_mat_std, dim=0)
+
+        return vec_alpha, mat_mu, mat_std
+
+    def forward(self, lst_vec_alpha_x: List[torch.Tensor], lst_mat_mu_x: List[torch.Tensor], lst_mat_std_x: List[torch.Tensor],
+                vec_alpha_y: torch.Tensor, mat_mu_y: torch.Tensor, mat_std_y: torch.Tensor):
+        """
+        calculate KL(f_x||f_y); kullback-leibler divergence between two gaussian distributions parametrized by $mu,\Sigma$
+        but $\Sigma$ is diagonal matrix.
+
+        :param lst_vec_alpha_x: posterior. list of the packed scale vectors.
+        :param lst_mat_mu_x: posterior. list of the sequence of packed mean vectors
+        :param lst_mat_std_x: posterior. list of the sequence of packed standard deviation vectors(=sqrt of the diagonal elements of covariance matrix)
+        :return: mean of the approximated kl divergence * scale parameter
+        """
+
+        lst_seq_len = [len(vec_alpha) for vec_alpha in lst_vec_alpha_x]
+        lst_weight = self._generate_weight(lst_seq_len=lst_seq_len)
+
+        if self._marginalize_posterior:
+            vec_alpha_x, mat_mu_x, mat_std_x = self._marginalize_gaussian_mixture(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x, lst_weight)
+            v_kldiv = self._approx_kldiv_between_diag_gmm_parallel(v_vec_alpha_x=vec_alpha_x, v_mat_mu_x=mat_mu_x, v_mat_cov_x=mat_std_x**2,
+                                                          v_vec_alpha_y=vec_alpha_y, v_mat_mu_y=mat_mu_y, v_mat_cov_y=mat_std_y**2)
+
+            return v_kldiv
+
+        else:
+            weight_sum = 0
+            v_kldiv = torch.zeros(1, dtype=torch.float, requires_grad=True, device=self._device)
+            for v_alpha, v_mu, v_std, weight in zip(lst_vec_alpha_x, lst_mat_mu_x, lst_mat_std_x, lst_weight):
+                v_kldiv_b = self._approx_kldiv_between_diag_gmm_parallel(v_vec_alpha_x=v_alpha, v_mat_mu_x=v_mu, v_mat_cov_x=v_std**2,
+                                                                v_vec_alpha_y=vec_alpha_y, v_mat_mu_y=mat_mu_y, v_mat_cov_y=mat_std_y**2)
+                if not torch.isnan(v_kldiv_b):
+                    v_kldiv = v_kldiv + v_kldiv_b * weight
+                    weight_sum += weight
+
+            if weight_sum > 0:
+                v_kldiv = torch.div(v_kldiv, weight_sum) * self._scale
+
+            return v_kldiv
