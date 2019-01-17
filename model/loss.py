@@ -480,7 +480,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
         :param reduction: it must be `samplewise_mean`
         """
 
-        assert marginalize_posterior == False, "this metric does not support `marginalize_posterior` option."
+        # assert marginalize_posterior == False, "this metric does not support `marginalize_posterior` option."
 
         assert reduction == "samplewise_mean", "this metric supports sample-wise mean only."
 
