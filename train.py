@@ -71,7 +71,7 @@ class Estimator(object):
 
         model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
 
-        obj = cls(model=model, loss_reconst=None, loss_layer_wd=None, loss_layer_kldiv=None, device=device)
+        obj = cls(model=model, loss_reconst=None, loss_layer_reg=None, loss_layer_kldiv=None, device=device)
 
         return obj
 
