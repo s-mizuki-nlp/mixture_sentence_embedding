@@ -21,7 +21,7 @@ from model.multi_layer import MultiDenseLayer
 from model.encoder import GMMLSTMEncoder
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
-from utility import calculate_mean_l2_between_sample
+from utility import calculate_mean_l2_between_sample, calculate_kldiv
 ## loss functions
 from model.loss import EmpiricalSlicedWassersteinDistance, GMMSinkhornWassersteinDistance, GMMApproxKLDivergence
 from model.loss import MaskedKLDivLoss
@@ -29,7 +29,6 @@ from model.loss import PaddedNLLLoss
 # variational autoencoder
 from model.vae import VariationalAutoEncoder
 ## used for evaluation
-from distribution.distance import calculate_kldiv
 
 # custom utility
 from preprocess import utils

@@ -2,14 +2,12 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
-import torch
 from scipy.misc import logsumexp
 from scipy.linalg import sqrtm
 from sklearn.metrics.pairwise import euclidean_distances
-from typing import List, Tuple, Union, Iterator, Optional
+from typing import Optional
 
-from utility import _tensor_to_array
-from .mixture import MultiVariateGaussianMixture
+# from .mixture import MultiVariateGaussianMixture
 
 
 # Earth Mover's Distance.
@@ -53,7 +51,7 @@ def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np
         return dist
 
 
-def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, return_distance_matrix=False, **kwargs):
+def wasserstein_distance_sq_between_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVariateGaussianMixture", return_distance_matrix=False, **kwargs):
     """
     wasserstein distance between gussian mixtures.
     """
@@ -135,7 +133,7 @@ def _kldiv_diag_parallel(mat_mu_x:np.ndarray, mat_cov_x:np.ndarray,
 
     return mat_kldiv
 
-def approx_kldiv_between_diag_gmm_parallel(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture) -> float:
+def approx_kldiv_between_diag_gmm_parallel(p_x: "MultiVariateGaussianMixture", p_y: "MultiVariateGaussianMixture") -> float:
     """
     calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
     but all $\Sigma_k$ is diagonal matrix.
@@ -166,7 +164,7 @@ def approx_kldiv_between_diag_gmm_parallel(p_x: MultiVariateGaussianMixture, p_y
     return kldiv
 
 
-def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture, n_sample=int(1E5)) -> float:
+def mc_kldiv_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVariateGaussianMixture", n_sample=int(1E5)) -> float:
     """
     calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
 
@@ -206,7 +204,7 @@ def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariat
 #
 #     return kldiv
 
-# def approx_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture) -> float:
+# def approx_kldiv_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVariateGaussianMixture") -> float:
 #     """
 #     calculates approximated KL(p_x||p_y); kullback-leibler divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
 #     but all $\Sigma_k$ is diagonal matrix.
@@ -230,49 +228,3 @@ def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariat
 #     return kldiv
 
 
-def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu: List[Union[np.ndarray, torch.Tensor]],
-                    lst_v_sigma: List[Union[np.ndarray, torch.Tensor]],
-                    prior_distribution: MultiVariateGaussianMixture,
-                    method: str = "analytical", n_mc_sample: Optional[int] = None,
-                    return_list: bool = False):
-    available_method = "analytical,monte_carlo"
-    assert method in available_method.split(","), f"`method` must be one of these: {available_method}"
-
-    n_mb = len(lst_v_alpha)
-    iter_alpha = map(_tensor_to_array, lst_v_alpha)
-    iter_mu = map(_tensor_to_array, lst_v_mu)
-    iter_sigma = map(_tensor_to_array, lst_v_sigma)
-    kldiv = []
-    for alpha, mu, sigma in zip(iter_alpha, iter_mu, iter_sigma):
-        n_dim_sigma = sigma.shape[-1]
-        if n_dim_sigma == 1: # istropic covariance matrix
-            posterior = MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, vec_std=sigma)
-        else: # diagonal covariance matrix
-            posterior = MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, mat_cov=sigma**2)
-
-        if method == "analytical":
-            kldiv_b = approx_kldiv_between_diag_gmm_parallel(p_x=posterior, p_y=prior_distribution)
-        else:
-            kldiv_b = mc_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution, n_sample=n_mc_sample)
-        kldiv.append(kldiv_b)
-
-    if return_list:
-        return kldiv
-    else:
-        ret = np.mean(kldiv)
-        return ret
-
-
-def approx_jsdiv_between_diag_gmm_parallel(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture) -> float:
-    """
-    calculates approximated JS(p_x||p_y); Jensen-Shannon divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
-    but all $\Sigma_k$ is diagonal matrix.
-
-    :param p_x: instance of MultiVariateGaussianMixture class.
-    :param p_y: instance of MultiVariateGaussianMixture class.
-    """
-
-    kldiv_xy = approx_kldiv_between_diag_gmm_parallel(p_x, p_y)
-    kldiv_yx = approx_kldiv_between_diag_gmm_parallel(p_y, p_x)
-
-    return 0.5*(kldiv_xy+kldiv_yx)
