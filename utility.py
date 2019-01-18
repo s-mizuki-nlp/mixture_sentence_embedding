@@ -2,15 +2,13 @@
 # -*- coding:utf-8 -*-
 
 import io, os
-from typing import List, Union, Optional, Dict
+from typing import List, Union, Dict
 import warnings
 import copy
 import torch
 import numpy as np
-from scipy.stats import norm
 from sklearn.metrics.pairwise import euclidean_distances
-from distribution.mixture import MultiVariateGaussianMixture
-from distribution.distance import approx_kldiv_between_diag_gmm_parallel, mc_kldiv_between_diag_gmm
+
 
 def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float):
     """
@@ -83,39 +81,6 @@ def _tensor_to_array(t: Union[np.ndarray, torch.Tensor]):
         return t
     else:
         raise AttributeError(f"unsupported type: {type(t)}")
-
-
-def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu: List[Union[np.ndarray, torch.Tensor]],
-                    lst_v_sigma: List[Union[np.ndarray, torch.Tensor]],
-                    prior_distribution: MultiVariateGaussianMixture,
-                    method: str = "analytical", n_mc_sample: Optional[int] = None,
-                    return_list: bool = False):
-    available_method = "analytical,monte_carlo"
-    assert method in available_method.split(","), f"`method` must be one of these: {available_method}"
-
-    n_mb = len(lst_v_alpha)
-    iter_alpha = map(_tensor_to_array, lst_v_alpha)
-    iter_mu = map(_tensor_to_array, lst_v_mu)
-    iter_sigma = map(_tensor_to_array, lst_v_sigma)
-    kldiv = []
-    for alpha, mu, sigma in zip(iter_alpha, iter_mu, iter_sigma):
-        n_dim_sigma = sigma.shape[-1]
-        if n_dim_sigma == 1: # istropic covariance matrix
-            posterior = MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, vec_std=sigma)
-        else: # diagonal covariance matrix
-            posterior = MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, mat_cov=sigma**2)
-
-        if method == "analytical":
-            kldiv_b = approx_kldiv_between_diag_gmm_parallel(p_x=posterior, p_y=prior_distribution)
-        else:
-            kldiv_b = mc_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution, n_sample=n_mc_sample)
-        kldiv.append(kldiv_b)
-
-    if return_list:
-        return kldiv
-    else:
-        ret = np.mean(kldiv)
-        return ret
 
 
 def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):

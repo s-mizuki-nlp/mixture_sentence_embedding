@@ -29,7 +29,7 @@ from model.loss import PaddedNLLLoss
 # variational autoencoder
 from model.vae import VariationalAutoEncoder
 ## used for evaluation
-from utility import calculate_kldiv
+from distribution.distance import calculate_kldiv
 
 # custom utility
 from preprocess import utils
