@@ -66,12 +66,12 @@ cfg_auto_encoder = {
             # 1) simple attention
             # 2) multi-head attention
             # 3) pass through(=do nothing)
-            # "simple_attention":{
-            #     "n_dim_query":n_dim_lstm_hidden*2,
-            #     "n_dim_memory":n_dim_latent
-            # },
-            "pass_turu":{ # no arguments
+            "simple_attention":{
+                "n_dim_query":n_dim_lstm_hidden*2,
+                "n_dim_memory":n_dim_latent
             },
+            # "pass_turu":{ # no arguments
+            # },
             # "multi_head_attention":{
             #     "n_head":2,
             #     "n_dim_query":n_dim_lstm_hidden*2,
