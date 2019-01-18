@@ -334,7 +334,7 @@ class Estimator(object):
                 raise NotImplementedError("unsupported regularizer type:", regularizer_name)
 
             if not isinstance(loss_layer_reg, type(self._loss_layer_reg)):
-                warnings.warn("you specified different type of regularizer to update prior:", regularizer_name)
+                warnings.warn(f"you specified different type of regularizer to update prior: {regularizer_name}")
 
         # create parameters for prior distribution
         v_alpha_y = torch.tensor(prior_distribution._alpha, device=self._device, dtype=torch.float32, requires_grad=False)
