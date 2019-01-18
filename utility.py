@@ -10,7 +10,7 @@ import numpy as np
 from scipy.stats import norm
 from sklearn.metrics.pairwise import euclidean_distances
 from distribution.mixture import MultiVariateGaussianMixture
-from distribution.distance import approx_kldiv_between_diag_gmm, mc_kldiv_between_diag_gmm
+from distribution.distance import approx_kldiv_between_diag_gmm_parallel, mc_kldiv_between_diag_gmm
 
 def generate_random_orthogonal_vectors(n_dim: int, n_vector: int, l2_norm: float):
     """
@@ -106,7 +106,7 @@ def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu
             posterior = MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, mat_cov=sigma**2)
 
         if method == "analytical":
-            kldiv_b = approx_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution)
+            kldiv_b = approx_kldiv_between_diag_gmm_parallel(p_x=posterior, p_y=prior_distribution)
         else:
             kldiv_b = mc_kldiv_between_diag_gmm(p_x=posterior, p_y=prior_distribution, n_sample=n_mc_sample)
         kldiv.append(kldiv_b)
