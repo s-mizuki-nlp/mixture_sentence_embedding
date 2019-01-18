@@ -62,12 +62,12 @@ def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: M
 
     vec_p, vec_q = p_x._alpha, p_y._alpha
     n_c_x, n_c_y = p_x.n_component, p_y.n_component
-    mat_dist = np.zeros(shape=(n_c_x, n_c_y), dtype=np.float)
-    for i in range(n_c_x):
-        for j in range(n_c_y):
-            mat_dist[i,j] = _wasserstein_distance_sq_between_multivariate_normal_diag(
-                vec_mu_x=p_x._mu[i], vec_std_x=np.sqrt(p_x._cov[i]), vec_mu_y=p_y._mu[j], vec_std_y=np.sqrt(p_y._cov[j])
-            )
+
+    mat_std_x = np.stack([np.sqrt(np.diag(cov)) for cov in p_x._cov])
+    mat_std_y = np.stack([np.sqrt(np.diag(cov)) for cov in p_y._cov])
+    mat_dist = _wasserstein_distance_sq_between_multivariate_normal_diag_parallel(
+        mat_mu_x=p_x._mu, mat_std_x=mat_std_x, mat_mu_y=p_y._mu, mat_std_y=mat_std_y
+        )
     # in case you don't need minimization
     if n_c_x == 1: # vec_p = [1]
         return mat_dist.dot(vec_q)
@@ -84,7 +84,7 @@ def wasserstein_distance_sq_between_gmm(p_x: MultiVariateGaussianMixture, p_y: M
 
 def _wasserstein_distance_sq_between_multivariate_normal(vec_mu_x: np.array, mat_cov_x: np.ndarray, vec_mu_y: np.array, mat_cov_y: np.ndarray) -> float:
     """
-    wasserstein distance between multivariate normal distributions
+    wasserstein distance between multivariate normal distributions without any restriction
     """
     d_mu = np.sum((vec_mu_x - vec_mu_y) ** 2)
     mat_std_x = sqrtm(mat_cov_x)
@@ -92,18 +92,25 @@ def _wasserstein_distance_sq_between_multivariate_normal(vec_mu_x: np.array, mat
 
     return d_mu + d_cov
 
-# wasserstein distance between multivariate normal with diagonal covariance matrix
-def _wasserstein_distance_sq_between_multivariate_normal_diag(vec_mu_x: np.array, vec_std_x: np.array, vec_mu_y: np.array, vec_std_y: np.array) -> float:
+
+def _wasserstein_distance_sq_between_multivariate_normal_diag_parallel(mat_mu_x: np.array, mat_std_x: np.array, mat_mu_y: np.array, mat_std_y: np.array) -> np.ndarray:
     """
     wasserstein distance between multivariate normal distributions with diagonal covariance matrix
     """
-    d_mu = np.sum((vec_mu_x - vec_mu_y)**2)
-    d_cov = np.sum((vec_std_x - vec_std_y)**2)
+    mat_wd_sq = _l2_distance_sq(mat_mu_x, mat_mu_y) + _l2_distance_sq(mat_std_x, mat_std_y)
+    return mat_wd_sq
 
-    return d_mu + d_cov
+
+def _l2_distance_sq(mat_x: np.ndarray, mat_y: np.ndarray) -> np.ndarray:
+    vec_x_norm = np.sum(mat_x**2, axis=-1)
+    vec_y_norm = np.sum(mat_y**2, axis=-1)
+    mat_xy = np.dot(mat_x, mat_y.T)
+    mat_l2_dist_sq = vec_x_norm.reshape(-1,1) - 2*mat_xy + vec_y_norm.reshape(1,-1)
+    return mat_l2_dist_sq
+
 
 def _kldiv_diag_parallel(mat_mu_x:np.ndarray, mat_cov_x:np.ndarray,
-                             mat_mu_y: Optional[np.ndarray] = None, mat_cov_y: Optional[np.ndarray] = None):
+                         mat_mu_y: Optional[np.ndarray] = None, mat_cov_y: Optional[np.ndarray] = None):
     n_dim = mat_mu_x.shape[0]
 
     # return: (n_c_x, n_c_y)
@@ -221,6 +228,8 @@ def mc_kldiv_between_diag_gmm(p_x: MultiVariateGaussianMixture, p_y: MultiVariat
 #     kldiv = np.sum(p_x._alpha * vec_ln_term)
 #
 #     return kldiv
+
+
 def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu: List[Union[np.ndarray, torch.Tensor]],
                     lst_v_sigma: List[Union[np.ndarray, torch.Tensor]],
                     prior_distribution: MultiVariateGaussianMixture,
@@ -252,3 +261,18 @@ def calculate_kldiv(lst_v_alpha: List[Union[np.ndarray, torch.Tensor]], lst_v_mu
     else:
         ret = np.mean(kldiv)
         return ret
+
+
+def approx_jsdiv_between_diag_gmm_parallel(p_x: MultiVariateGaussianMixture, p_y: MultiVariateGaussianMixture) -> float:
+    """
+    calculates approximated JS(p_x||p_y); Jensen-Shannon divergence between two gaussian mixtures parametrized by $\{\alpha_k, \mu_k,\Sigma_k\}$.
+    but all $\Sigma_k$ is diagonal matrix.
+
+    :param p_x: instance of MultiVariateGaussianMixture class.
+    :param p_y: instance of MultiVariateGaussianMixture class.
+    """
+
+    kldiv_xy = approx_kldiv_between_diag_gmm_parallel(p_x, p_y)
+    kldiv_yx = approx_kldiv_between_diag_gmm_parallel(p_y, p_x)
+
+    return 0.5*(kldiv_xy+kldiv_yx)
