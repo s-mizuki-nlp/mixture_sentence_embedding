@@ -580,7 +580,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
             v_kldiv = self._approx_kldiv_between_diag_gmm_parallel(v_vec_alpha_x=vec_alpha_x, v_mat_mu_x=mat_mu_x, v_mat_cov_x=mat_std_x**2,
                                                           v_vec_alpha_y=vec_alpha_y, v_mat_mu_y=mat_mu_y, v_mat_cov_y=mat_std_y**2)
 
-            return v_kldiv
+            return v_kldiv * self._scale * self._multiplier
 
         else:
             weight_sum = 0
