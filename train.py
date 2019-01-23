@@ -235,7 +235,8 @@ class Estimator(object):
             "total_cost":float(reconst_loss) + float(reg_loss_prior),
             "kldiv_ana":None,
             "kldiv_mc":None,
-            "elbo":None
+            "elbo":None,
+            "tau":self._model.sampler_tau
         }
         if "kldiv_ana" in evaluation_metrics:
             metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,

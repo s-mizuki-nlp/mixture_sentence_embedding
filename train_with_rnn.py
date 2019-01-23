@@ -241,6 +241,8 @@ def main():
 
             # update scale parameter of wasserstein distance layer
             estimator.reg_wasserstein.update_scale_parameter(n_processed=n_processed)
+            # update annealing parameter of sampler layer
+            sampler.update_anneal_parameter(n_processed=n_processed)
 
             # training
             if cfg_optimizer["validation_interval"] is not None:
