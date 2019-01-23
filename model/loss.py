@@ -502,7 +502,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
 
     def _kldiv_diag_parallel(self, mat_mu_x:torch.Tensor, mat_cov_x:torch.Tensor,
                              mat_mu_y: Optional[torch.Tensor] = None, mat_cov_y: Optional[torch.Tensor] = None):
-        n_dim = mat_mu_x.shape[0]
+        n_dim = mat_mu_x.shape[1]
 
         # return: (n_c_x, n_c_y)
         # return[i,j] = KL(p_x_i||p_y_j)
@@ -514,7 +514,7 @@ class GMMApproxKLDivergence(BaseAnnealableLoss):
 
         v_ln_nu_sum_x = torch.sum(torch.log(mat_cov_x), dim=-1)
         v_ln_nu_sum_y = torch.sum(torch.log(mat_cov_y), dim=-1)
-        v_det_term = v_ln_nu_sum_x.reshape(-1,1) + v_ln_nu_sum_y.reshape(1,-1)
+        v_det_term = - v_ln_nu_sum_x.reshape(-1,1) + v_ln_nu_sum_y.reshape(1,-1)
 
         v_tr_term = torch.mm(mat_cov_x, torch.transpose(1./mat_cov_y, 0, 1))
 
