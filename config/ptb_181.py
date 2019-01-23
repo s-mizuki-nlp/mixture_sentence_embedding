@@ -178,7 +178,7 @@ cfg_corpus = {
 cfg_optimizer = {
     "gradient_clip":1.0,
     "n_epoch":100,
-    "n_minibatch":256,
+    "n_minibatch":128,
     "optimizer":torch.optim.Adam,
     "lr":0.001,
     "validation_interval":100

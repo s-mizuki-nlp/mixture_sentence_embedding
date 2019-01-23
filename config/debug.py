@@ -8,7 +8,7 @@ import torch.optim
 import regex
 import numpy as np
 
-from utility import sigmoid_generator
+from utility import sigmoid_generator, linear_decay_generator
 
 highway = False
 bidirectional = True
@@ -87,7 +87,7 @@ cfg_auto_encoder = {
     },
     "sampler": {
         "n_sample":n_sample_from_encoder,
-        "param_tau":0.1,
+        "param_tau":linear_decay_generator(init_value=1.0, final_value=0.03, coef=-1E-4, offset=300),
         "expect_log_alpha":True,
         "enable_gumbel_softmax_trick":True
     },

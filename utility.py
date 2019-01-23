@@ -105,6 +105,26 @@ def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):
     return sigmoid
 
 
+def linear_decay_generator(init_value: float, final_value: float, coef: float, offset: float):
+    """
+    it returns truncated linear decay function: min{max{coef*(x-offset)+init_value, init_value}, final_value}
+    returned value range will be [init_value, final_value]
+    """
+    assert init_value > final_value, "init_value must be larger than final_value."
+
+    _i = init_value
+    _f = final_value
+    _c = coef
+    _o = offset
+
+    def linear(x: Union[int, float]):
+        ret = _c * (x - _o) + _i
+        ret = min(max(_f, ret), _i)
+        return ret
+
+    return linear
+
+
 def enumerate_optional_metrics(cfg_metrics: Union[List[str], Dict[str,int]], n_epoch):
 
     if isinstance(cfg_metrics, list):
