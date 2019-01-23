@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from typing import List, Optional
+from typing import List, Optional, Callable, Union
 
 import torch
 from torch import nn
@@ -11,14 +11,16 @@ import numpy as np
 
 class GMMSampler(nn.Module):
 
-    def __init__(self, n_sample: int, param_tau: float, expect_log_alpha: bool = False,
+    def __init__(self, n_sample: int, param_tau: Union[int, float, Callable[[int], float]],
+                 expect_log_alpha: bool = False,
                  enable_gumbel_softmax_trick: bool = True,
                  device=torch.device("cpu"), debug=False):
 
-        super().__init__()
+        super(GMMSampler, self).__init__()
 
+        self._anneal_func_tau = param_tau
+        self.update_anneal_parameter(n_processed=0)
         self._n_sample = n_sample
-        self._tau = param_tau
         self._debug = debug
         self._device = device
         self._gumbel_softmax_trick = enable_gumbel_softmax_trick
@@ -28,9 +30,18 @@ class GMMSampler(nn.Module):
     def tau(self) -> float:
         return self._tau
 
-    @tau.setter
-    def tau(self, value: float):
-        self._tau = value
+    def update_anneal_parameter(self, n_processed: int):
+        """
+
+        :param n_processed: number of processed sentences so far.
+        :return: scale value
+        """
+        if isinstance(self._anneal_func_tau, (int, float)):
+            self._tau = self._anneal_func_tau
+        elif isinstance(self._anneal_func_tau, Callable):
+            self._tau = self._anneal_func_tau(n_processed)
+        else:
+            raise NotImplementedError("unsupported scale parameter type. it must be numeric or callable that returns numeric value.")
 
     @property
     def sample_size(self):

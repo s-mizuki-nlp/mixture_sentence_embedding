@@ -31,10 +31,6 @@ class VariationalAutoEncoder(nn.Module):
     def sampler_tau(self):
         return self._sampler.tau
 
-    @sampler_tau.setter
-    def sampler_tau(self, value: float):
-        self._sampler.tau = value
-
     @property
     def sampler_size(self):
         return self._sampler.sample_size
