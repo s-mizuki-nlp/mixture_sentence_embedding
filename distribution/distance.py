@@ -109,7 +109,16 @@ def _l2_distance_sq(mat_x: np.ndarray, mat_y: np.ndarray) -> np.ndarray:
 
 def _kldiv_diag_parallel(mat_mu_x:np.ndarray, mat_cov_x:np.ndarray,
                          mat_mu_y: Optional[np.ndarray] = None, mat_cov_y: Optional[np.ndarray] = None):
-    n_dim = mat_mu_x.shape[0]
+    """
+    it calculates kullback-leibler divergence between multivariate gaussian distributions with diagonal covariance.
+    :param mat_mu_x: (n_c_x, n_d); mat_mu_x[c] = E[X_c]
+    :param mat_cov_x: (n_c_x, n_d); mat_cov_x[c] = diag(V[X_c])
+    :param mat_mu_y: (n_c_y, n_d); mat_mu_y[c] = E[Y_c]
+    :param mat_cov_y: (n_c_y, n_d); mat_mu_y[c] = diag(V[Y_c])
+    :return: (n_c_x, n_c_y); KL(p_x_i||p_y_j)
+    """
+
+    n_dim = mat_mu_x.shape[1]
 
     # return: (n_c_x, n_c_y)
     # return[i,j] = KL(p_x_i||p_y_j)
@@ -120,7 +129,7 @@ def _kldiv_diag_parallel(mat_mu_x:np.ndarray, mat_cov_x:np.ndarray,
 
     v_ln_nu_sum_x = np.sum(np.log(mat_cov_x), axis=-1)
     v_ln_nu_sum_y = np.sum(np.log(mat_cov_y), axis=-1)
-    v_det_term = v_ln_nu_sum_x.reshape(-1,1) + v_ln_nu_sum_y.reshape(1,-1)
+    v_det_term = - v_ln_nu_sum_x.reshape(-1,1) + v_ln_nu_sum_y.reshape(1,-1)
 
     v_tr_term = np.dot(mat_cov_x, np.transpose(1./mat_cov_y))
 
