@@ -84,6 +84,25 @@ class MultiVariateGaussianMixture(object):
     def is_cov_iso(self):
         return self._is_cov_iso
 
+    @property
+    def mean(self):
+        return np.sum(self._mu * self._alpha.reshape(-1,1), axis=0)
+
+    @property
+    def covariance(self):
+        sum_cov = np.sum(self._cov * self._alpha.reshape(-1,1,1), axis=0)
+        sum_mu = np.zeros((self.n_dim, self.n_dim), dtype=self._mu.dtype)
+        for i in range(self.n_component):
+            for j in range(self.n_component):
+                a_i, a_j = self._alpha[i], self._alpha[j]
+                mu_i, mu_j = self._mu[i].reshape(-1,1), self._mu[j].reshape(-1,1)
+
+                if i == j:
+                    sum_mu += a_i * (1. - a_i) * mu_i.dot(mu_i.T)
+                else:
+                    sum_mu -= a_i * a_j * mu_i.dot(mu_j.T)
+        return sum_cov + sum_mu
+
     @classmethod
     def random_generation(cls, n_k: int, n_dim: int, covariance_type="spherical", mu_range=None, cov_range=None):
         lst_available_covariance_type = "identity,spherical,diagonal".split(",")
@@ -173,7 +192,7 @@ class MultiVariateGaussianMixture(object):
         obj.__class__ = cls
         return obj
 
-    def density_plot(self, fig_and_ax=None, vis_range=None, n_mesh_bin=100, **kwargs):
+    def density_plot(self, fig_and_ax=None, vis_range=None, n_mesh_bin=100, cmap="Reds", **kwargs):
         assert self._n_dim == 2, "visualization isn't available except 2-dimensional distribution."
 
         rng_default = np.max(np.abs(self._mu)) + 2. * np.sqrt(np.max(self._cov))
@@ -183,13 +202,13 @@ class MultiVariateGaussianMixture(object):
         mesh_xy = np.vstack([mesh_x.flatten(), mesh_y.flatten()])
 
         if fig_and_ax is None:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(6,6))
         else:
             fig, ax = fig_and_ax[0], fig_and_ax[1]
 
         value_z = self.pdf(mesh_xy.T)
 
-        ax.pcolormesh(mesh_x, mesh_y, value_z.reshape(mesh_x.shape), **kwargs)
+        ax.pcolormesh(mesh_x, mesh_y, value_z.reshape(mesh_x.shape), cmap=cmap, **kwargs)
 
         return fig, ax
 
@@ -295,6 +314,31 @@ class MultiVariateGaussianMixture(object):
             raise NotImplementedError(f"unsupported metric was specified: {metric}")
 
         return mat_dist
+
+    def _calc_principal_component_vectors(self, n_dim: int):
+        assert n_dim < self.n_dim, "reduced dimension size `n_dim` must be smaller than original dimension size."
+
+        # covariance matrix
+        mat_cov = self.covariance
+        # eigen decomposition
+        vec_l, mat_w = np.linalg.eig(mat_cov)
+        # take largest top-k eigenvectors
+        idx_rank = vec_l.argsort()[::-1]
+        mat_w_h = mat_w[:, idx_rank[:n_dim]]
+        # returned matrix shape will be (self.n_dim, n_dim). each column is a i-th eigenvector
+        return mat_w_h
+
+    def dimensionality_reduction_by_pca(self, n_dim: int):
+        # calculate factor loading matrix; (n_dim, n_dim_r)
+        mat_w_h = self._calc_principal_component_vectors(n_dim)
+        # transform mean matrix; (n_component, n_dim_r)
+        mat_mu_h = self._mu.dot(mat_w_h)
+        # transform covariance tensor; (n_component, n_dim_r, n_dim_r)
+        t_cov_h = np.transpose(mat_w_h.T.dot(self._cov).dot(mat_w_h), (1,0,2))
+        # create new instance
+        ret = MultiVariateGaussianMixture(vec_alpha=self._alpha, mat_mu=mat_mu_h, tensor_cov=t_cov_h)
+
+        return ret
 
 
 class UniVariateGaussianMixture(object):
