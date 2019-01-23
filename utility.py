@@ -86,7 +86,7 @@ def _tensor_to_array(t: Union[np.ndarray, torch.Tensor]):
         raise AttributeError(f"unsupported type: {type(t)}")
 
 
-def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-4):
+def sigmoid_generator(scale: float, coef: float, offset: float, min_value=1E-1):
     """
     it returns scale*sigmoid(coef*(x-offset)) = scale / (1. + exp(-coef*(x-offset)))
     returned value range will be [min_value, scale]
