@@ -11,6 +11,7 @@ from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
 
+from .distance import _kldiv_diag_parallel, _wasserstein_distance_sq_between_multivariate_normal_diag_parallel
 
 vector = np.array
 matrix = np.ndarray
@@ -236,6 +237,65 @@ class MultiVariateGaussianMixture(object):
         mu_t = self._mu.dot(vec_theta) # mu[k]^T.theta
         std_t = np.sqrt(vec_theta.dot(self._cov).dot(vec_theta)) # theta^T.cov[k].theta
         return UniVariateGaussianMixture(self._alpha, mu_t, std_t)
+
+    def intra_distance_matrix(self, metric: str) -> np.ndarray:
+        """
+        returns distance matrix between its components measured by specified metric.
+        it supports gaussian mixture with diagonal covariance matrix only.
+        supported metrics are: squared 2-wasserstein(wd_sq), kullback-leibler(kl), jensen-shannon(js)
+
+        :param metric:
+        """
+        assert self.is_cov_diag, "currently it supports diagonal covariance only."
+
+        mat_mu = self._mu
+        mat_cov = np.stack([np.diag(cov) for cov in self._cov])
+
+        if metric == "wd_sq":
+            mat_std = np.sqrt(mat_cov)
+            mat_dist = _wasserstein_distance_sq_between_multivariate_normal_diag_parallel(
+                        mat_mu_x=mat_mu, mat_std_x=mat_std, mat_mu_y=mat_mu, mat_std_y=mat_std)
+        elif metric == "kl":
+            mat_dist = _kldiv_diag_parallel(mat_mu_x=mat_mu, mat_cov_x=mat_cov)
+        elif metric == "js":
+            mat_dist = _kldiv_diag_parallel(mat_mu_x=mat_mu, mat_cov_x=mat_cov)
+            mat_dist = 0.5*(mat_dist + mat_dist.T)
+        else:
+            raise NotImplementedError(f"unsupported metric was specified: {metric}")
+
+        return mat_dist
+
+    def inter_distance_matrix(self, p_y: "MultiVariateGaussianMixture", metric: str) -> np.ndarray:
+        """
+        returns distance matrix between the components of two gaussian mixtures measured by specified metric.
+        it supports gaussian mixture with diagonal covariance matrix only.
+        supported metrics are: squared 2-wasserstein(wd_sq), kullback-leibler(kl), jensen-shannon(js)
+
+        :param metric:
+        """
+        assert self.is_cov_diag, "currently it supports diagonal covariance only."
+        assert p_y.is_cov_diag, "currently it supports diagonal covariance only."
+
+        mat_mu_x = self._mu
+        mat_cov_x = np.stack([np.diag(cov) for cov in self._cov])
+        mat_mu_y = p_y._mu
+        mat_cov_y = np.stack([np.diag(cov) for cov in p_y._cov])
+
+        if metric == "wd_sq":
+            mat_std_x, mat_std_y = np.sqrt(mat_cov_x), np.sqrt(mat_cov_y)
+            mat_dist = _wasserstein_distance_sq_between_multivariate_normal_diag_parallel(
+                        mat_mu_x=mat_mu_x, mat_std_x=mat_std_x, mat_mu_y=mat_mu_y, mat_std_y=mat_std_y)
+        elif metric == "kl":
+            mat_dist = _kldiv_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
+        elif metric == "js":
+            mat_dist_xy = _kldiv_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
+            mat_dist_yx = _kldiv_diag_parallel(mat_mu_x=mat_mu_y, mat_cov_x=mat_cov_y, mat_mu_y=mat_mu_x, mat_cov_y=mat_cov_x)
+            mat_dist = 0.5*(mat_dist_xy + mat_dist_yx.T)
+        else:
+            raise NotImplementedError(f"unsupported metric was specified: {metric}")
+
+        return mat_dist
+
 
 class UniVariateGaussianMixture(object):
 
