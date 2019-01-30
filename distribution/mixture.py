@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import os, sys, io
+import warnings
 from typing import Optional, Union, List, Any
 import pickle
 import numpy as np
@@ -192,7 +193,7 @@ class MultiVariateGaussianMixture(object):
         obj.__class__ = cls
         return obj
 
-    def density_plot(self, fig_and_ax=None, vis_range=None, n_mesh_bin=100, cmap="Reds", **kwargs):
+    def density_plot(self, fig_and_ax=None, vis_range=None, figsize=None, lst_annotations=None, n_mesh_bin=100, cmap="Reds", **kwargs):
         assert self._n_dim == 2, "visualization isn't available except 2-dimensional distribution."
 
         rng_default = np.max(np.abs(self._mu)) + 2. * np.sqrt(np.max(self._cov))
@@ -202,13 +203,21 @@ class MultiVariateGaussianMixture(object):
         mesh_xy = np.vstack([mesh_x.flatten(), mesh_y.flatten()])
 
         if fig_and_ax is None:
-            fig, ax = plt.subplots(figsize=(6,6))
+            fig, ax = plt.subplots(figsize=figsize)
         else:
             fig, ax = fig_and_ax[0], fig_and_ax[1]
 
         value_z = self.pdf(mesh_xy.T)
 
         ax.pcolormesh(mesh_x, mesh_y, value_z.reshape(mesh_x.shape), cmap=cmap, **kwargs)
+
+        if lst_annotations is not None:
+            if len(lst_annotations) != self.n_component:
+                warnings.warn(f"specified `lst_annotation` length doesn't match with the number of mixture components: {self.n_component}")
+            else:
+                # annotate texts
+                for token, (x_val, y_val) in zip(lst_annotations, self._mu):
+                    ax.annotate(token, (x_val, y_val))
 
         return fig, ax
 
@@ -328,8 +337,12 @@ class MultiVariateGaussianMixture(object):
         # returned matrix shape will be (self.n_dim, n_dim). each column is a i-th eigenvector
         return mat_w_h
 
-    def dimensionality_reduction_by_pca(self, n_dim: int):
+    def dimensionality_reduction_by_pca(self, n_dim: int, factor_loading_matrix: Optional[np.ndarray] = None):
+
         # calculate factor loading matrix; (n_dim, n_dim_r)
+        if factor_loading_matrix is not None:
+            mat_w_h = factor_loading_matrix
+            assert mat_w_h.shape[1] == n_dim, "specified factor loading matrix is inconsistent with `n_dim` argument."
         mat_w_h = self._calc_principal_component_vectors(n_dim)
         # transform mean matrix; (n_component, n_dim_r)
         mat_mu_h = self._mu.dot(mat_w_h)
