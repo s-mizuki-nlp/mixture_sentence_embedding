@@ -229,6 +229,7 @@ def main():
         #### train phase ####
         phase = "train"
         print(f"phase:{phase}")
+        model.train()
         logger = dict_logger[phase]
         cfg_corpus_t = cfg_corpus[phase]
         lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
@@ -301,6 +302,7 @@ def main():
 
         phase = "test"
         print(f"phase:{phase}")
+        model.eval()
         logger = dict_logger[phase]
         lst_eval_metrics = enumerate_optional_metrics(cfg_metrics=cfg_corpus[phase].get("evaluation_metrics",[]), n_epoch=n_epoch+1)
         lst_metrics_batch = []
