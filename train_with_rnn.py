@@ -97,7 +97,12 @@ def main():
     # instanciate corpora
     tokenizer = CharacterTokenizer()
     dictionary = Dictionary.load(file_path=cfg_corpus["dictionary"])
-    bos, eos = list(dictionary.special_tokens)
+    if len(dictionary.special_tokens) == 2:
+        bos, eos = list(dictionary.special_tokens)
+    elif len(dictionary.special_tokens) == 3:
+        bos, eos, oov = list(dictionary.special_tokens)
+    else:
+        raise NotImplementedError("unexpected dictionary type.")
 
     dict_data_feeder = {}
     for corpus_type in "train,dev,test".split(","):
