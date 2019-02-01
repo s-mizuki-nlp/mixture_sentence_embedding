@@ -221,6 +221,10 @@ class Estimator(object):
         mean_sigma = np.mean(mat_sigma)
         mean_l2_dist = calculate_mean_l2_between_sample(t_z_posterior=v_z_posterior.cpu().data.numpy())
         mean_max_alpha = np.mean([np.max(v_alpha.cpu().data.numpy()) for v_alpha in lst_v_alpha])
+        if isinstance(self._model, nn.DataParallel):
+            tau = self._model.module.sampler_tau
+        else:
+            tau = self._model.sampler_tau
         metrics = {
             "n_sentence":n_sentence,
             "n_token":n_token,
@@ -236,7 +240,7 @@ class Estimator(object):
             "kldiv_ana":None,
             "kldiv_mc":None,
             "elbo":None,
-            "tau":self._model.sampler_tau
+            "tau":tau
         }
         if "kldiv_ana" in evaluation_metrics:
             metrics["kldiv_ana"] = calculate_kldiv(lst_v_alpha=lst_v_alpha, lst_v_mu=lst_v_mu, lst_v_sigma=lst_v_sigma,
