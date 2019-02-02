@@ -3,6 +3,7 @@
 
 import os, sys, io
 import warnings
+import pprint
 from collections import OrderedDict
 from typing import List, Dict, Union, Any, Optional
 from copy import deepcopy
@@ -17,8 +18,14 @@ from preprocess.dataset_feeder import GeneralSentenceFeeder
 from preprocess import utils
 
 # encoders
-from model.multi_layer import MultiDenseLayer
+from model.multi_layer import MultiDenseLayer, IdentityLayer
 from model.encoder import GMMLSTMEncoder
+# decoder
+from model.attention import  SimpleGlobalAttention, MultiHeadedAttention, PassTuru
+from model.decoder import SelfAttentiveLSTMDecoder
+from model.decoder import SimplePredictor
+## sampler
+from model.noise_layer import GMMSampler
 ## prior distribution
 from distribution.mixture import MultiVariateGaussianMixture
 from utility import calculate_mean_l2_between_sample, calculate_kldiv
@@ -59,20 +66,80 @@ class Estimator(object):
 
     @classmethod
     def load_encoder_from_file(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, path_state_dict: str, device):
+        # instanciate variational autoencoder model
+        model = cls.instanciate_variational_autoencoder(cfg_auto_encoder=cfg_auto_encoder, n_vocab=n_vocab, device=device, path_state_dict=path_state_dict, encoder_only=True)
+        # instanciate estimator class
+        obj = cls(model=model, loss_reconst=None, loss_layer_reg=None, loss_layer_kldiv=None, device=device)
+
+        return obj
+
+    @classmethod
+    def load_variational_autoencoder_from_file(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, path_state_dict: str, device):
+        # instanciate variational autoencoder model
+        model = cls.instanciate_variational_autoencoder(cfg_auto_encoder=cfg_auto_encoder, n_vocab=n_vocab, device=device, path_state_dict=path_state_dict, encoder_only=False)
+        # instanciate estimator class
+        obj = cls(model=model, loss_reconst=None, loss_layer_reg=None, loss_layer_kldiv=None, device=device)
+
+        return obj
+
+    @classmethod
+    def instanciate_variational_autoencoder(cls, cfg_auto_encoder: Dict[str, Any], n_vocab: int, device,
+                                            path_state_dict: Optional[str] = None, encoder_only: bool = False) -> VariationalAutoEncoder:
         # instanciate variational autoencoder
         cfg_encoder = cfg_auto_encoder["encoder"]
         ## MLP for \alpha, \mu, \sigma
         for param_name in "alpha,mu,sigma".split(","):
-            cfg_encoder["lstm"][f"encoder_{param_name}"] = None if cfg_encoder[param_name] is None else MultiDenseLayer(**cfg_encoder[param_name])
+            if cfg_encoder[param_name] is None:
+                if param_name == "alpha":
+                    layer = None
+                elif param_name == "sigma":
+                    layer = IdentityLayer(n_dim_out=cfg_auto_encoder["prior"]["n_dim"])
+                else:
+                    pprint.pprint(cfg_encoder)
+                    raise NotImplementedError("unsupported configuration detected.")
+            else:
+                layer = MultiDenseLayer(**cfg_encoder[param_name])
+            cfg_encoder["lstm"][f"encoder_{param_name}"] = layer
         ## encoder
         encoder = GMMLSTMEncoder(n_vocab=n_vocab, device=device, **cfg_encoder["lstm"])
-        encoder = cls._load_encoder_params(encoder=encoder, path_model_state_dict=path_state_dict, device=device)
 
-        model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
+        # if you specify `encoder_only`, omit sampler, decoder, and predictor.
+        if encoder_only:
+            if path_state_dict is not None:
+                encoder = cls._load_encoder_params(encoder=encoder, path_model_state_dict=path_state_dict, device=device)
+            model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=None, set_to_state_decoder=None, state_to_seq_decoder=None)
+            return model
 
-        obj = cls(model=model, loss_reconst=None, loss_layer_reg=None, loss_layer_kldiv=None, device=device)
+        ## sampler(from posterior)
+        sampler = GMMSampler(device=device, **cfg_auto_encoder["sampler"])
 
-        return obj
+        ## decoder
+        latent_decoder_name = next(iter(cfg_auto_encoder["decoder"]["latent"]))
+        if latent_decoder_name == "simple_attention":
+            latent_decoder = SimpleGlobalAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
+        elif latent_decoder_name == "multi_head_attention":
+            latent_decoder = MultiHeadedAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
+        elif latent_decoder_name == "pass_turu":
+            latent_decoder = PassTuru(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
+        else:
+            raise NotImplementedError(f"unsupported latent decoder:{latent_decoder_name}")
+        decoder = SelfAttentiveLSTMDecoder(latent_decoder=latent_decoder, device=device, **cfg_auto_encoder["decoder"]["lstm"])
+        ## prediction layer
+        predictor = SimplePredictor(n_dim_out=n_vocab, log=True, **cfg_auto_encoder["predictor"])
+
+        ## variational autoencoder
+        model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
+                                       set_to_state_decoder=decoder, state_to_seq_decoder=predictor)
+        ## load parameters from checkpoint
+        if path_state_dict is not None:
+            print(f"model parameter will be restored from file: {path_state_dict}")
+            if device.type == "cpu":
+                state_dict=torch.load(path_state_dict, map_location="cpu")
+            else:
+                state_dict=torch.load(path_state_dict)
+            model.load_state_dict(state_dict=state_dict)
+
+        return model
 
     @classmethod
     def _load_encoder_params(cls, encoder: nn.Module, path_model_state_dict: str, device):
