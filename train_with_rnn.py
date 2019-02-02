@@ -283,6 +283,10 @@ def main():
             print(f"saving...:{path_trained_model_e}")
             torch.save(model.state_dict(), path_trained_model_e)
 
+        # clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         #### (optional) update prior distribution ###
         if "update" in cfg_auto_encoder["prior"]:
             cfg_update_prior = cfg_auto_encoder["prior"]["update"]
@@ -319,6 +323,10 @@ def main():
                                                        prior_distribution=prior_distribution,
                                                        evaluation_metrics=lst_eval_metrics)
             lst_metrics_batch.append(metrics_batch)
+
+        # clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # calculate whole metrics
         metrics = {}
