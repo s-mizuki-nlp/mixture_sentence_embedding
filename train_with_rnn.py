@@ -169,52 +169,9 @@ def main():
         path_prior = os.path.join(args.save_dir, f"prior_distribution.gmm.{file_name_suffix}.pickle")
         prior_distribution.save(file_path=path_prior)
 
-    # instanciate variational autoencoder
-    cfg_encoder = cfg_auto_encoder["encoder"]
-    ## MLP for \alpha, \mu, \sigma
-    for param_name in "alpha,mu,sigma".split(","):
-        if cfg_encoder[param_name] is None:
-            if param_name == "alpha":
-                layer = None
-            elif param_name == "sigma":
-                layer = IdentityLayer(n_dim_out=cfg_auto_encoder["prior"]["n_dim"])
-            else:
-                pprint.pprint(cfg_encoder)
-                raise NotImplementedError("unsupported configuration detected.")
-        else:
-            layer = MultiDenseLayer(**cfg_encoder[param_name])
-        cfg_encoder["lstm"][f"encoder_{param_name}"] = layer
-    ## encoder
-    encoder = GMMLSTMEncoder(n_vocab=dictionary.max_id+1, device=args.device, **cfg_encoder["lstm"])
-
-    ## sampler(from posterior)
-    sampler = GMMSampler(device=args.device, **cfg_auto_encoder["sampler"])
-
-    ## decoder
-    latent_decoder_name = next(iter(cfg_auto_encoder["decoder"]["latent"]))
-    if latent_decoder_name == "simple_attention":
-        latent_decoder = SimpleGlobalAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
-    elif latent_decoder_name == "multi_head_attention":
-        latent_decoder = MultiHeadedAttention(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
-    elif latent_decoder_name == "pass_turu":
-        latent_decoder = PassTuru(**cfg_auto_encoder["decoder"]["latent"][latent_decoder_name])
-    else:
-        raise NotImplementedError(f"unsupported latent decoder:{latent_decoder_name}")
-    decoder = SelfAttentiveLSTMDecoder(latent_decoder=latent_decoder, device=args.device, **cfg_auto_encoder["decoder"]["lstm"])
-    ## prediction layer
-    predictor = SimplePredictor(n_dim_out=dictionary.max_id+1, log=True, **cfg_auto_encoder["predictor"])
-
-    ## variational autoencoder
-    model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
-                                   set_to_state_decoder=decoder, state_to_seq_decoder=predictor)
-    ## load parameters from checkpoint
-    if args.checkpoint is not None:
-        print(f"model parameter will be restored from file: {args.checkpoint}")
-        if args.device.type == "cpu":
-            state_dict=torch.load(args.checkpoint, map_location="cpu")
-        else:
-            state_dict=torch.load(args.checkpoint)
-        model.load_state_dict(state_dict=state_dict)
+    # instanciate variational autoencoder model
+    model = Estimator.instanciate_variational_autoencoder(cfg_auto_encoder=cfg_auto_encoder, n_vocab=dictionary.max_id+1,
+                                                          device=args.device, path_state_dict=args.checkpoint, encoder_only=False)
     ## wrap with DataParallel class for parallel processing
     if len(args.gpus) > 1:
         model = nn.DataParallel(model, device_ids = args.gpus)
@@ -271,9 +228,9 @@ def main():
             n_iteration += 1
 
             # update scale parameter of wasserstein distance layer
-            estimator.reg_wasserstein.update_scale_parameter(n_processed=n_processed)
+            estimator.loss_reg.update_scale_parameter(n_processed=n_processed)
             # update annealing parameter of sampler layer
-            sampler.update_anneal_parameter(n_processed=n_processed)
+            estimator.model._sampler.update_anneal_parameter(n_processed=n_processed)
 
             # training
             if cfg_optimizer["validation_interval"] is not None:

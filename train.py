@@ -57,11 +57,15 @@ class Estimator(object):
         self._verbose = verbose
 
     @property
-    def reg_wasserstein(self):
+    def loss_reg(self):
         return self._loss_layer_reg
 
     @property
-    def reg_kldiv(self):
+    def model(self) -> VariationalAutoEncoder:
+        return self._model
+
+    @property
+    def loss_kldiv(self):
         return self._loss_layer_kldiv
 
     @classmethod
