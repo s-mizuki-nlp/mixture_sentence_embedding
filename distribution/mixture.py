@@ -187,7 +187,7 @@ class MultiVariateGaussianMixture(object):
             pickle.dump(self, ofs)
 
     @classmethod
-    def load(cls, file_path: str):
+    def load(cls, file_path: str) -> "MultiVariateGaussianMixture":
         with io.open(file_path, mode="rb") as ifs:
             obj = pickle.load(ifs)
         obj.__class__ = cls

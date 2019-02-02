@@ -60,6 +60,9 @@ def _parse_args():
     parser.add_argument("--gpus", required=False, type=str, default="0", help="GPU device ids to be used for dataparallel processing. DEFAULT:0")
     parser.add_argument("--save_every_epoch", action="store_true", help="save trained model at every epoch. DEFAULT:False")
     parser.add_argument("--log_validation_only", action="store_true", help="record validation metrics only. DEFAULT:False")
+    parser.add_argument("--checkpoint", required=False, type=str, default=None, help="restart checkpoint. specify saved model parameters. DEFAULT:None")
+    parser.add_argument("--checkpoint_prior", required=False, type=str, default=None, help="prior distribution that corresponds to specified checkpoint.")
+    parser.add_argument("--checkpoint_epoch", required=False, type=int, default=None, help="restart epoch number.")
     parser.add_argument("--verbose", action="store_true", help="output verbosity")
     args = parser.parse_args()
 
@@ -69,6 +72,11 @@ def _parse_args():
     else:
         args.gpus = []
     args.device = torch.device(args.device)
+
+    if args.checkpoint is not None:
+        assert args.checkpoint_epoch is not None, "you must specify `checkpoint_epoch` argument when you restart from the checkpoint."
+        assert args.checkpoint_prior is not None, "you must specify `checkpoint_prior` argument when you restart from the checkpoint."
+        assert os.path.exists(args.checkpoint_prior), f"specified file does not exist: {args.checkpoint_prior}"
 
     return args
 
@@ -140,19 +148,26 @@ def main():
     is_sliced_wasserstein = regularizer_name.find("sliced_wasserstein") != -1
 
     # calculate l2 norm and stdev of the mean and stdev of prior distribution
-    expected_wd = cfg_auto_encoder["prior"].get("expected_wd", 1.0)
-    l2_norm, std = calculate_prior_dist_params(expected_wd=expected_wd, n_dim_latent=n_dim_gmm, sliced_wasserstein=is_sliced_wasserstein)
-    ## overwrite auto values with user-defined values
-    l2_norm = cfg_auto_encoder["prior"].get("l2_norm", l2_norm)
-    std = cfg_auto_encoder["prior"].get("std", std)
-    print("prior distribution parameters.")
-    print(f"\tl2_norm:{l2_norm:2.3f}, stdev:{std:2.3f}")
-    vec_alpha = np.full(shape=n_prior_gmm_component, fill_value=1./n_prior_gmm_component)
-    mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, l2_norm=l2_norm)
-    vec_std = np.ones(shape=n_prior_gmm_component) * std
-    prior_distribution = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, vec_std=vec_std)
-    path_prior = os.path.join(args.save_dir, f"prior_distribution.gmm.{file_name_suffix}.pickle")
-    prior_distribution.save(file_path=path_prior)
+    if args.checkpoint is not None:
+        path_prior = args.checkpoint_prior
+        print(f"prior distribution will be restored from file: {path_prior}")
+        prior_distribution = MultiVariateGaussianMixture.load(file_path=path_prior)
+        assert prior_distribution.n_dim == n_dim_gmm, f"configuration mismatch detected: {n_dim_gmm}"
+        assert prior_distribution.n_component == n_prior_gmm_component, f"configuration mismatch detected: {n_prior_gmm_component}"
+    else:
+        expected_wd = cfg_auto_encoder["prior"].get("expected_wd", 1.0)
+        l2_norm, std = calculate_prior_dist_params(expected_wd=expected_wd, n_dim_latent=n_dim_gmm, sliced_wasserstein=is_sliced_wasserstein)
+        ## overwrite auto values with user-defined values
+        l2_norm = cfg_auto_encoder["prior"].get("l2_norm", l2_norm)
+        std = cfg_auto_encoder["prior"].get("std", std)
+        print("prior distribution parameters.")
+        print(f"\tl2_norm:{l2_norm:2.3f}, stdev:{std:2.3f}")
+        vec_alpha = np.full(shape=n_prior_gmm_component, fill_value=1./n_prior_gmm_component)
+        mat_mu = generate_random_orthogonal_vectors(n_dim=n_dim_gmm, n_vector=n_prior_gmm_component, l2_norm=l2_norm)
+        vec_std = np.ones(shape=n_prior_gmm_component) * std
+        prior_distribution = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, vec_std=vec_std)
+        path_prior = os.path.join(args.save_dir, f"prior_distribution.gmm.{file_name_suffix}.pickle")
+        prior_distribution.save(file_path=path_prior)
 
     # instanciate variational autoencoder
     cfg_encoder = cfg_auto_encoder["encoder"]
@@ -192,6 +207,15 @@ def main():
     ## variational autoencoder
     model = VariationalAutoEncoder(seq_to_gmm_encoder=encoder, gmm_sampler=sampler,
                                    set_to_state_decoder=decoder, state_to_seq_decoder=predictor)
+    ## load parameters from checkpoint
+    if args.checkpoint is not None:
+        print(f"model parameter will be restored from file: {args.checkpoint}")
+        if args.device.type == "cpu":
+            state_dict=torch.load(args.checkpoint, map_location="cpu")
+        else:
+            state_dict=torch.load(args.checkpoint)
+        model.load_state_dict(state_dict=state_dict)
+    ## wrap with DataParallel class for parallel processing
     if len(args.gpus) > 1:
         model = nn.DataParallel(model, device_ids = args.gpus)
     model.to(device=args.device)
@@ -226,9 +250,10 @@ def main():
     # start training
     n_epoch_total = cfg_optimizer["n_epoch"]
     # iterate over epoch
-    n_iteration = 0
-    n_processed = 0
-    for n_epoch in range(n_epoch_total):
+    n_epoch_init = 0 if args.checkpoint is None else args.checkpoint_epoch
+    n_iteration = 0 if args.checkpoint is None else int(np.ceil(cfg_corpus["train"]["size"] / cfg_optimizer["n_minibatch"]))
+    n_processed = 0 if args.checkpoint is None else cfg_corpus["train"]["size"] * n_epoch_init
+    for n_epoch in range(n_epoch_init, n_epoch_total):
         print(f"epoch:{n_epoch}")
 
         #### train phase ####
