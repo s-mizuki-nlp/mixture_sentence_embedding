@@ -315,7 +315,7 @@ class MultiVariateGaussianMixture(object):
                         mat_mu_x=mat_mu_x, mat_std_x=mat_std_x, mat_mu_y=mat_mu_y, mat_std_y=mat_std_y)
         elif metric == "kl":
             mat_dist = _kldiv_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
-        elif metric == "js":
+        elif metric in ["js","js_an"]:
             mat_dist_xy = _kldiv_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
             mat_dist_yx = _kldiv_diag_parallel(mat_mu_x=mat_mu_y, mat_cov_x=mat_cov_y, mat_mu_y=mat_mu_x, mat_cov_y=mat_cov_x)
             mat_dist = 0.5*(mat_dist_xy + mat_dist_yx.T)
