@@ -5,7 +5,7 @@ import os, sys, io
 import warnings
 import pprint
 from collections import OrderedDict
-from typing import List, Dict, Union, Any, Optional
+from typing import List, Dict, Union, Any, Optional, Iterable
 from copy import deepcopy
 from contextlib import ExitStack
 
@@ -446,3 +446,34 @@ class Estimator(object):
         prior_updated = MultiVariateGaussianMixture(vec_alpha=x_alpha, mat_mu=x_mu, mat_cov = x_sigma**2)
 
         return prior_updated
+
+    def encode_sequence_to_posterior(self, sequence: Union[List[List[int]], List[int]]) -> List[MultiVariateGaussianMixture]:
+
+        # convert to iterable
+        if isinstance(sequence[0], int):
+            sequence = [sequence]
+        # format input sequence
+        lst_order = list(range(len(sequence)))
+        lst_seq_len, lst_seq, lst_original_order = utils.len_pad_sort(sequence, lst_order)
+        # encode to posterior parameters
+        lst_alpha, lst_mu, lst_sigma = self.inference_single_step(lst_seq=lst_seq, lst_seq_len=lst_seq_len)
+        # convert to gaussian mixture class
+        iter_params = zip(lst_alpha, lst_mu, lst_sigma)
+        lst_posterior = [MultiVariateGaussianMixture(vec_alpha=alpha, mat_mu=mu, mat_cov=sigma**2) for alpha, mu, sigma in iter_params]
+        # sort by original order
+        _, lst_posterior = utils.multiple_sort(lst_original_order, lst_posterior)
+
+        return lst_posterior
+
+
+    def encode_sentence_to_posterior(self, sentence: Union[Iterable, str], preprocessor: GeneralSentenceFeeder) -> List[MultiVariateGaussianMixture]:
+
+        # convert to iterable
+        if isinstance(sentence, str):
+            sentence = [sentence]
+        # apply preprocessing
+        batch = list(map(preprocessor.process_single_sentence, sentence))
+        # encode to posterior
+        lst_posterior = self.encode_sequence_to_posterior(sequence=batch)
+
+        return lst_posterior
