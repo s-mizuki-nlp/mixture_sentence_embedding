@@ -53,6 +53,17 @@ class GeneralSequenceFeeder(AbstractFeeder):
 
         return iter_token_idx
 
+    def process_single_sentence(self, sentence: str):
+        lst_token = self._tokenizer.tokenize_single(sentence)
+        lst_token_idx = self._dictionary.transform(lst_token)
+        return lst_token_idx
+
+    def __len__(self):
+        return len(self._corpus)
+
+    @property
+    def size(self):
+        return len(self._corpus)
 
 class GeneralSentenceFeeder(GeneralSequenceFeeder):
 
@@ -114,6 +125,20 @@ class GeneralSentenceFeeder(GeneralSequenceFeeder):
         iter_token_idx = self._dictionary.iter_transform(iter_token)
 
         return iter_token_idx
+
+    def process_single_sentence(self, sentence: str):
+        lst_token = self._tokenizer.tokenize_single(sentence)
+
+        # prepend/append special tokens
+        if self._mode == "bos":
+            lst_token = [self._bos] + lst_token
+        elif self._mode == "eos":
+            lst_token = lst_token + [self._eos]
+        elif self._mode == "both":
+            lst_token = [self._bos] + lst_token + [self._eos]
+
+        lst_token_idx = self._dictionary.transform(lst_token)
+        return lst_token_idx
 
 
 class SeqToGMMFeeder(AbstractFeeder):

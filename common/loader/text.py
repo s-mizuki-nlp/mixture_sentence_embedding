@@ -11,12 +11,26 @@ class AbstractLoader(object):
     def __init__(self, file_path, n_minibatch=1):
         self._path = file_path
         self._n_mb = n_minibatch
+        self._n_rows = None
 
     @abstractmethod
     def __iter__(self):
         pass
 
+    def __len__(self):
+        return self.n_rows
 
+    @property
+    def n_rows(self):
+        if self._n_rows is not None:
+            return self._n_rows
+
+        ret = 0
+        with io.open(self._path, mode="r") as ifs:
+            for _ in ifs:
+                ret += 1
+        self._n_rows = ret
+        return ret
 
 class TextLoader(AbstractLoader):
 
@@ -28,7 +42,6 @@ class TextLoader(AbstractLoader):
         with io.open(self._path, mode="r") as ifs:
             for line in ifs:
                 yield line.strip(self._strip)
-
 
 class MinibatchTextLoader(AbstractLoader):
 
