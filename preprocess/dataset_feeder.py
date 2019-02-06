@@ -10,8 +10,9 @@ from typing import Iterable, List, Dict, Tuple, Union, Any, Optional
 from more_itertools import chunked
 
 from .tokenizer import AbstractTokenizer
+from .wordpiece import FullTokenizer
 from .corpora import Dictionary
-
+from common.loader.table import AnnotatedTextLoader, PayloadContainer
 
 class AbstractFeeder(object):
 
@@ -105,24 +106,24 @@ class GeneralSentenceFeeder(GeneralSequenceFeeder):
 
     def _init_iter_batch(self):
 
-        iter_token = self._tokenizer.tokenize(self._corpus)
+        iter_sentences = self._tokenizer.tokenize(self._corpus)
         # discard too short sequence
         if self._min_seq_len is not None:
-            iter_token = (lst_token for lst_token in iter_token if len(lst_token) >= self._min_seq_len)
+            iter_sentences = (lst_token for lst_token in iter_sentences if len(lst_token) >= self._min_seq_len)
         # trim sequence length
         if self._max_seq_len is not None:
-            iter_token = (lst_token[:self._max_seq_len] for lst_token in iter_token)
+            iter_sentences = (lst_token[:self._max_seq_len] for lst_token in iter_sentences)
 
         # prepend/append special tokens
         if self._mode == "bos":
-            iter_token = ([self._bos] + lst_token for lst_token in iter_token)
+            iter_sentences = ([self._bos] + lst_token for lst_token in iter_sentences)
         elif self._mode == "eos":
-            iter_token = (lst_token + [self._eos] for lst_token in iter_token)
+            iter_sentences = (lst_token + [self._eos] for lst_token in iter_sentences)
         elif self._mode == "both":
-            iter_token = ([self._bos] + lst_token + [self._eos] for lst_token in iter_token)
+            iter_sentences = ([self._bos] + lst_token + [self._eos] for lst_token in iter_sentences)
 
         # transform to integer sequence
-        iter_token_idx = self._dictionary.iter_transform(iter_token)
+        iter_token_idx = self._dictionary.iter_transform(iter_sentences)
 
         return iter_token_idx
 
@@ -171,3 +172,59 @@ class SeqToGMMFeeder(AbstractFeeder):
         iter_trainset = zip(iter_token_idx, *lst_gmm_param)
 
         return iter_trainset
+
+class AnnotatedTextFeeder(AbstractFeeder):
+
+    def __init__(self, corpus: AnnotatedTextLoader, tokenizer: AbstractTokenizer,
+                 dictionary: Dictionary, n_minibatch: int = 1, validation_split: float = 0.0,
+                 min_seq_len: Optional[int] = None,
+                 max_seq_len: Optional[int] = None,
+                 bos_symbol: Optional[str] = None, eos_symbol: Optional[str] = None):
+        """
+        extension of the GeneralSequenceFeeder class that is customized to sentence feed.
+        it can prepend/append special token at the beginning/end of the sentence.
+
+        :param corpus: collection of the sentence
+        :param tokenizer: tokenizer for the sentence
+        :param dictionary: token-to-index encoder
+        :param n_minibatch: minibatch size
+        :param bos_symbol: beginning-of-sentence symbol. e.g. `<bos>`
+        :param eos_symbol: end-of-sentence symbol. e.g. `<eos>`
+        """
+        super(__class__, self).__init__(n_minibatch, validation_split=validation_split)
+
+        self._corpus = corpus
+        self._tokenizer = tokenizer
+        self._dictionary = dictionary
+        self._min_seq_len = min_seq_len
+        self._max_seq_len = max_seq_len
+        self._bos_symbol = bos_symbol
+        self._eos_symbol = eos_symbol
+
+    def _init_iter_batch(self):
+
+        iter_labels = PayloadContainer(container=self._corpus, payload_key="label")
+        iter_text_a = PayloadContainer(container=self._corpus, payload_key="text_a")
+        iter_text_b = PayloadContainer(container=self._corpus, payload_key="text_b")
+
+        text_feeder_a = GeneralSentenceFeeder(corpus=iter_text_a, tokenizer=self._tokenizer, dictionary=self._dictionary,
+                                                    n_minibatch=1, validation_split=0.,
+                                                    min_seq_len=self._min_seq_len, max_seq_len=self._max_seq_len,
+                                                    bos_symbol=self._bos_symbol, eos_symbol=self._eos_symbol)
+        text_feeder_b = GeneralSentenceFeeder(corpus=iter_text_b, tokenizer=self._tokenizer, dictionary=self._dictionary,
+                                                    n_minibatch=1, validation_split=0.,
+                                                    min_seq_len=self._min_seq_len, max_seq_len=self._max_seq_len,
+                                                    bos_symbol=self._bos_symbol, eos_symbol=self._eos_symbol)
+        iter_payloads = zip(text_feeder_a, text_feeder_b, iter_labels)
+
+        for (token_a,_), (token_b,_), label in iter_payloads:
+            payload = {
+                "text_a":token_a[0],
+                "text_b":token_b[0],
+                "label":label
+            }
+            yield payload
+
+    def process_single_sentence(self, sentence: str):
+        lst_token_idx = self._dictionary.transform(self._tokenizer.tokenize_single(sentence))
+        return lst_token_idx
