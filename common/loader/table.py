@@ -9,7 +9,6 @@ from abc import ABCMeta, abstractmethod
 from .text import  AbstractLoader
 
 
-
 class AnnotatedTextLoader(AbstractLoader):
 
     def __init__(self, file_path, text_a: int, text_b: Optional[int], label: int, label_type: type, header: Optional[int] = None, sep: str = " "):
@@ -61,3 +60,17 @@ class MinibatchAnnotatedTextLoader(AnnotatedTextLoader):
                 lst_ret = []
         if len(lst_ret) > 0:
             yield lst_ret
+
+
+class PayloadContainer(object):
+
+    def __init__(self, container: AnnotatedTextLoader, payload_key: str):
+        self._container = container
+        self._payload_key = payload_key
+
+        assert payload_key in container.columns, f"invalid payload key was specified: {payload_key}"
+
+    def __iter__(self):
+
+        for payload in self._container:
+            yield payload[self._payload_key]
