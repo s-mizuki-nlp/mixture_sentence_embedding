@@ -226,5 +226,9 @@ class AnnotatedTextFeeder(AbstractFeeder):
             yield payload
 
     def process_single_sentence(self, sentence: str):
-        lst_token_idx = self._dictionary.transform(self._tokenizer.tokenize_single(sentence))
+        text_feeder = GeneralSentenceFeeder(corpus=[], tokenizer=self._tokenizer, dictionary=self._dictionary,
+                                            n_minibatch=1, validation_split=0.,
+                                            min_seq_len=self._min_seq_len, max_seq_len=self._max_seq_len,
+                                            bos_symbol=self._bos_symbol, eos_symbol=self._eos_symbol)
+        lst_token_idx = text_feeder.process_single_sentence(sentence)
         return lst_token_idx

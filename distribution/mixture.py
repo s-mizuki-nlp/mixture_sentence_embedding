@@ -343,7 +343,8 @@ class MultiVariateGaussianMixture(object):
         if factor_loading_matrix is not None:
             mat_w_h = factor_loading_matrix
             assert mat_w_h.shape[1] == n_dim, "specified factor loading matrix is inconsistent with `n_dim` argument."
-        mat_w_h = self._calc_principal_component_vectors(n_dim)
+        else:
+            mat_w_h = self._calc_principal_component_vectors(n_dim)
         # transform mean matrix; (n_component, n_dim_r)
         mat_mu_h = self._mu.dot(mat_w_h)
         # transform covariance tensor; (n_component, n_dim_r, n_dim_r)
