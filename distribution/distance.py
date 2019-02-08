@@ -198,6 +198,10 @@ def distance_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVar
 
     if metric == "wd_sq":
         dist = wasserstein_distance_sq_between_gmm(p_x, p_y, return_distance_matrix=False, **kwargs)
+    elif metric == "wd_sq_norm":
+        norm = np.sqrt(p_x.n_component * p_y.n_component)
+        dist_sq_raw = wasserstein_distance_sq_between_gmm(p_x, p_y, return_distance_matrix=False, **kwargs)
+        dist = dist_sq_raw / norm
     elif metric == "kl_an":
         dist = approx_kldiv_between_diag_gmm_parallel(p_x, p_y)
     elif metric == "kl_mc":
@@ -210,6 +214,14 @@ def distance_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVar
         dist_xy = mc_kldiv_between_diag_gmm(p_x, p_y, **kwargs)
         dist_yx = mc_kldiv_between_diag_gmm(p_y, p_x, **kwargs)
         dist = 0.5*(dist_xy + dist_yx)
+    elif metric == "kl_an_min":
+        dist_xy = approx_kldiv_between_diag_gmm_parallel(p_x, p_y)
+        dist_yx = approx_kldiv_between_diag_gmm_parallel(p_y, p_x)
+        dist = min(dist_xy, dist_yx)
+    elif metric == "kl_mc_min":
+        dist_xy = mc_kldiv_between_diag_gmm(p_x, p_y, **kwargs)
+        dist_yx = mc_kldiv_between_diag_gmm(p_y, p_x, **kwargs)
+        dist = min(dist_xy, dist_yx)
     else:
         raise NotImplementedError(f"unsupported metric was specified: {metric}")
 
