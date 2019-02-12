@@ -222,7 +222,54 @@ def distance_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVar
         dist_xy = mc_kldiv_between_diag_gmm(p_x, p_y, **kwargs)
         dist_yx = mc_kldiv_between_diag_gmm(p_y, p_x, **kwargs)
         dist = min(dist_xy, dist_yx)
+    elif metric == "elk":
+        sim = expected_likelihood_kernel(p_x, p_y, log=False)
+        dist = np.log(1. - sim)
     else:
         raise NotImplementedError(f"unsupported metric was specified: {metric}")
 
     return dist
+
+
+def _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x: np.array, mat_cov_x: np.array, mat_mu_y: np.array, mat_cov_y: np.array) -> np.ndarray:
+    """
+    calculate expected likelihood kernel between multivariate normal distributions with diagonal covariance matrix
+    """
+
+    n_x, n_dim = mat_mu_x.shape
+    n_y, _ = mat_mu_y.shape
+
+    t_cov_xy = mat_cov_x.reshape(n_x, 1, -1) + mat_cov_y.reshape(1, n_y, -1)
+    t_mu_xy = mat_mu_x.reshape(n_x, 1, -1) - mat_mu_y.reshape(1, n_y, -1)
+
+    mat_ln_det_term = np.sum(np.log(t_cov_xy), axis=-1)
+    mat_quad_term_xy = np.sum( t_mu_xy**2 / t_cov_xy, axis=-1)
+
+    mat_log_kernel = -0.5 * (mat_ln_det_term + mat_quad_term_xy + n_dim * np.log(2*np.pi))
+
+    return mat_log_kernel
+
+
+def expected_likelihood_kernel(p_x: "MultiVariateGaussianMixture", p_y: "MultiVariateGaussianMixture", log: bool = True, return_kernel: bool = False):
+
+    # return: log{sum_{i,j}{ \alpha_i \alpha_j k(p_x_i||p_y_j)}}
+    mat_mu_x = p_x._mu
+    mat_mu_y = p_y._mu
+
+    mat_cov_x = np.stack([np.diag(cov) for cov in p_x._cov])
+    mat_cov_y = np.stack([np.diag(cov) for cov in p_y._cov])
+
+    mat_log_kernel = _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x, mat_cov_x, mat_mu_y, mat_cov_y)
+    mat_log_alpha_xy = np.log(p_x._alpha).reshape(-1,1) + np.log(p_y._alpha).reshape(1,-1)
+
+    log_kernel = logsumexp( mat_log_alpha_xy + mat_log_kernel )
+
+    if log:
+        ret = log_kernel
+    else:
+        ret = np.exp(log_kernel)
+
+    if return_kernel:
+        return ret, mat_log_kernel
+    else:
+        return ret
