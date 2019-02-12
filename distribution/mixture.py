@@ -360,6 +360,25 @@ class MultiVariateGaussianMixture(object):
 
         return ret
 
+    def normalize(self, inplace=False):
+
+        vec_scale = np.linalg.norm(self._mu, axis=-1)
+        mu_norm = self._mu / vec_scale.reshape(-1,1)
+        cov_norm = self._cov / (vec_scale.reshape(-1,1,1)**2)
+
+        if inplace:
+            self._mu = mu_norm
+            self._cov = cov_norm
+        else:
+            if self.is_cov_iso:
+                vec_std = np.sqrt(np.array([cov[0,0] for cov in cov_norm]))
+                return MultiVariateGaussianMixture(vec_alpha=self._alpha, mat_mu=mu_norm, vec_std=vec_std)
+            elif self.is_cov_diag:
+                mat_cov = np.stack([np.diag(cov) for cov in cov_norm])
+                return MultiVariateGaussianMixture(vec_alpha=self._alpha, mat_mu=mu_norm, mat_cov=mat_cov)
+            else:
+                return MultiVariateGaussianMixture(vec_alpha=self._alpha, mat_mu=mu_norm, tensor_cov=cov_norm)
+
 
 class UniVariateGaussianMixture(object):
 
