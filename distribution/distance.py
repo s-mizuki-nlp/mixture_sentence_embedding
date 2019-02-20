@@ -225,6 +225,9 @@ def distance_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVar
     elif metric == "elk":
         sim = expected_likelihood_kernel(p_x, p_y, log=False)
         dist = np.log(1. - sim)
+    elif metric == "elk_log_neg":
+        sim = expected_likelihood_kernel(p_x, p_y, log=True)
+        dist = -sim
     else:
         raise NotImplementedError(f"unsupported metric was specified: {metric}")
 

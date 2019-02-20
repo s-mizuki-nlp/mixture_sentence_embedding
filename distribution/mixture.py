@@ -291,6 +291,9 @@ class MultiVariateGaussianMixture(object):
         elif metric == "elk":
             mat_sim = _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x=mat_mu, mat_cov_x=mat_cov, mat_mu_y=mat_mu, mat_cov_y=mat_cov)
             mat_dist = np.log(1. - np.exp(mat_sim))
+        elif metric == "elk_log_neg":
+            mat_sim = _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x=mat_mu, mat_cov_x=mat_cov, mat_mu_y=mat_mu, mat_cov_y=mat_cov)
+            mat_dist = -mat_sim
         else:
             raise NotImplementedError(f"unsupported metric was specified: {metric}")
 
@@ -325,6 +328,9 @@ class MultiVariateGaussianMixture(object):
         elif metric == "elk":
             mat_sim_xy = _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
             mat_dist = np.log(1. - np.exp(mat_sim_xy))
+        elif metric == "elk_log_neg":
+            mat_sim_xy = _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x=mat_mu_x, mat_cov_x=mat_cov_x, mat_mu_y=mat_mu_y, mat_cov_y=mat_cov_y)
+            mat_dist = -mat_sim_xy
         else:
             raise NotImplementedError(f"unsupported metric was specified: {metric}")
 
